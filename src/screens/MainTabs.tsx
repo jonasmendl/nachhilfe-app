@@ -1,59 +1,34 @@
-import React from 'react';
-import { View, Text, StyleSheet } from 'react-native';
-import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
-import { Ionicons } from '@expo/vector-icons';
+import React from "react";
+import { createBottomTabNavigator } from "@react-navigation/bottom-tabs";
+import { useAuth } from "./context/AuthContext";
 
-function ProfileScreen() {
-  return (
-    <View style={styles.center}>
-      <Text>Profile Screen</Text>
-    </View>
-  );
-}
-
-function MatchesScreen() {
-  return (
-    <View style={styles.center}>
-      <Text>Matches Screen</Text>
-    </View>
-  );
-}
-
-function ChatScreen() {
-  return (
-    <View style={styles.center}>
-      <Text>Chat Screen</Text>
-    </View>
-  );
-}
+import StudentSwipeScreen from "./student/StudentSwipeScreen";
+import TeacherRequestScreen from "./teacher/TeacherRequestScreen"; // ✅ EINZAHL + richtiger Pfad
+import ChatsScreen from "./shared/ChatsScreen";
+import ProfileScreen from "./shared/ProfileScreen";
 
 const Tab = createBottomTabNavigator();
 
 export default function MainTabs() {
+  const { user } = useAuth();
+
+  if (!user?.role) return null;
+
   return (
-    <Tab.Navigator
-      screenOptions={({ route }) => ({
-        headerShown: false,
-        tabBarIcon: ({ color, size }) => {
-          let iconName: string = '';
-
-          if (route.name === 'Profile') iconName = 'person-circle';
-          else if (route.name === 'Matches') iconName = 'heart';
-          else if (route.name === 'Chat') iconName = 'chatbubbles';
-
-          return <Ionicons name={iconName as any} size={size} color={color} />;
-        },
-        tabBarActiveTintColor: 'tomato',
-        tabBarInactiveTintColor: 'gray',
-      })}
-    >
-      <Tab.Screen name="Chat" component={ChatScreen} />
-      <Tab.Screen name="Matches" component={MatchesScreen} />
-      <Tab.Screen name="Profile" component={ProfileScreen} />
+    <Tab.Navigator>
+      {user.role === "Student" ? (
+        <>
+          <Tab.Screen name="Chats" component={ChatsScreen} />
+          <Tab.Screen name="Swipen" component={StudentSwipeScreen} />
+          <Tab.Screen name="Profil" component={ProfileScreen} />
+        </>
+      ) : (
+        <>
+          <Tab.Screen name="Anfragen" component={TeacherRequestScreen} />
+          <Tab.Screen name="Chats" component={ChatsScreen} />
+          <Tab.Screen name="Profil" component={ProfileScreen} />
+        </>
+      )}
     </Tab.Navigator>
   );
 }
-
-const styles = StyleSheet.create({
-  center: { flex: 1, alignItems: 'center', justifyContent: 'center' },
-});
