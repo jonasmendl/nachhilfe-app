@@ -1,0 +1,17 @@
+{
+  "name": "backend",
+  "version": "1.0.0",
+  "description": "Lightweight API server for the Nachhilfe app.",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js",
+    "dev": "node --watch server.js"
+  },
+  "keywords": [
+    "nachhilfe",
+    "api"
+  ],
+  "author": "",
+  "license": "ISC",
+  "type": "commonjs"
+}
