@@ -2,12 +2,7 @@ import React, { useState } from 'react';
 import { View, Text, TextInput, TouchableOpacity, StyleSheet, Alert } from 'react-native';
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { useNavigation } from '@react-navigation/native';
-
-type RootStackParamList = {
-  RoleSelect: undefined;
-  SignUp: undefined;
-  MainTabs: undefined; // Dein Tab Navigator
-};
+import { RootStackParamList } from '../navigation/types';
 
 export default function SignUpScreen() {
   const navigation = useNavigation<NativeStackNavigationProp<RootStackParamList>>();
