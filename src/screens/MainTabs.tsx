@@ -2,6 +2,7 @@ import React from 'react';
 import { View, Text, StyleSheet } from 'react-native';
 import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
 import { Ionicons } from '@expo/vector-icons';
+import TeacherRequestScreen from './TeacherRequestScreen';
 
 function ProfileScreen() {
   return (
@@ -15,14 +16,6 @@ function MatchesScreen() {
   return (
     <View style={styles.center}>
       <Text>Matches Screen</Text>
-    </View>
-  );
-}
-
-function ChatScreen() {
-  return (
-    <View style={styles.center}>
-      <Text>Chat Screen</Text>
     </View>
   );
 }
@@ -47,7 +40,7 @@ export default function MainTabs() {
         tabBarInactiveTintColor: 'gray',
       })}
     >
-      <Tab.Screen name="Chat" component={ChatScreen} />
+      <Tab.Screen name="Chat" component={TeacherRequestScreen} />
       <Tab.Screen name="Matches" component={MatchesScreen} />
       <Tab.Screen name="Profile" component={ProfileScreen} />
     </Tab.Navigator>

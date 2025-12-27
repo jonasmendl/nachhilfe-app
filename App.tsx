@@ -4,8 +4,10 @@ import { createNativeStackNavigator } from '@react-navigation/native-stack';
 import RoleSelectScreen from './src/screens/RoleSelectScreen';
 import SignUpScreen from './src/screens/SignUpScreen';
 import MainTabs from './src/screens/MainTabs';
+import ChatDetailScreen from './src/screens/ChatDetailScreen';
+import { RootStackParamList } from './src/navigation/types';
 
-const Stack = createNativeStackNavigator();
+const Stack = createNativeStackNavigator<RootStackParamList>();
 
 export default function App() {
   return (
@@ -25,6 +27,11 @@ export default function App() {
           name="MainTabs"
           component={MainTabs}
           options={{ headerShown: false }}
+        />
+        <Stack.Screen
+          name="ChatDetail"
+          component={ChatDetailScreen}
+          options={{ title: 'Chat Detail' }}
         />
       </Stack.Navigator>
     </NavigationContainer>
