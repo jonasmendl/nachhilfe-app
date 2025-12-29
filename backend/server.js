@@ -1,134 +1,148 @@
-const http = require('node:http');
-const { URL } = require('node:url');
+import http from "http";
 
 const PORT = process.env.PORT || 4000;
 
-const lessons = [
+/* ---------------- In-memory data ---------------- */
+
+const users = [
   {
     id: 1,
-    subject: 'Mathematik',
-    tutor: 'Anna Schmidt',
-    durationMinutes: 60,
-    level: 'Oberstufe',
+    name: "Anna Schmidt",
+    role: "teacher",
+    subjects: ["Mathematik", "Physik"],
+    location: "Berlin",
+    availability: "Nachmittags",
+    createdAt: new Date().toISOString(),
   },
   {
     id: 2,
-    subject: 'Englisch',
-    tutor: 'Lukas Weber',
-    durationMinutes: 45,
-    level: 'Mittelstufe',
+    name: "Jonas Meyer",
+    role: "student",
+    subjects: ["Mathematik"],
+    location: "Berlin",
+    availability: "Flexibel",
+    createdAt: new Date().toISOString(),
   },
+];
+
+const requests = [
   {
-    id: 3,
-    subject: 'Physik',
-    tutor: 'Mara Keller',
-    durationMinutes: 90,
-    level: 'Abitur',
+    id: 1,
+    studentId: 2,
+    subject: "Mathematik",
+    level: "Oberstufe",
+    location: "Berlin",
+    availability: "Nachmittags",
+    status: "pending",
+    createdAt: new Date().toISOString(),
   },
 ];
 
 const corsHeaders = {
-  'Access-Control-Allow-Origin': '*',
-  'Access-Control-Allow-Methods': 'GET,POST,OPTIONS',
-  'Access-Control-Allow-Headers': 'Content-Type',
+  "Access-Control-Allow-Origin": "*",
+  "Access-Control-Allow-Methods": "GET,POST,PATCH,OPTIONS",
+  "Access-Control-Allow-Headers": "Content-Type",
 };
 
-function sendJson(res, statusCode, payload) {
-  res.writeHead(statusCode, {
-    'Content-Type': 'application/json; charset=utf-8',
+/* ---------------- Helpers ---------------- */
+
+function sendJson(res, status, data) {
+  res.writeHead(status, {
+    "Content-Type": "application/json",
     ...corsHeaders,
   });
-  res.end(JSON.stringify(payload));
+  res.end(JSON.stringify(data));
 }
 
-function parseRequestBody(req) {
+function parseBody(req) {
   return new Promise((resolve, reject) => {
-    let body = '';
-
-    req.on('data', (chunk) => {
-      body += chunk;
-      if (body.length > 1e6) {
-        req.destroy();
-        reject(new Error('Payload too large'));
-      }
-    });
-
-    req.on('end', () => resolve(body));
-    req.on('error', (error) => reject(error));
+    let body = "";
+    req.on("data", (chunk) => (body += chunk));
+    req.on("end", () => resolve(body ? JSON.parse(body) : {}));
+    req.on("error", reject);
   });
 }
 
-const server = http.createServer(async (req, res) => {
-  const { method, url: requestUrl } = req;
-  const url = new URL(requestUrl, `http://${req.headers.host}`);
+/* ---------------- Server ---------------- */
 
-  if (method === 'OPTIONS') {
+const server = http.createServer(async (req, res) => {
+  const { method, url } = req;
+  const parsedUrl = new URL(url, `http://${req.headers.host}`);
+
+  if (method === "OPTIONS") {
     res.writeHead(204, corsHeaders);
     res.end();
     return;
   }
 
-  if (method === 'GET' && url.pathname === '/api/health') {
-    sendJson(res, 200, { status: 'ok', timestamp: new Date().toISOString() });
+  if (method === "GET" && parsedUrl.pathname === "/api/health") {
+    sendJson(res, 200, { status: "ok", time: new Date().toISOString() });
     return;
   }
 
-  if (method === 'GET' && url.pathname === '/api/info') {
-    sendJson(res, 200, {
-      name: 'Nachhilfe API',
-      version: '1.0.0',
-      description: 'Einfache API für die Nachhilfe-App',
-    });
+  if (method === "GET" && parsedUrl.pathname === "/api/users") {
+    sendJson(res, 200, users);
     return;
   }
 
-  if (method === 'GET' && url.pathname === '/api/lessons') {
-    sendJson(res, 200, { items: lessons });
-    return;
-  }
+  if (method === "POST" && parsedUrl.pathname === "/api/users") {
+    const body = await parseBody(req);
+    const { name, role } = body;
 
-  if (method === 'POST' && url.pathname === '/api/lessons') {
-    let data;
-
-    try {
-      const body = await parseRequestBody(req);
-      data = body ? JSON.parse(body) : {};
-    } catch (error) {
-      const message = error instanceof Error ? error.message : 'Ungültige Anfrage';
-      const statusCode = message === 'Payload too large' ? 413 : 400;
-      sendJson(res, statusCode, { message: `Konnte Anfrage nicht lesen: ${message}` });
+    if (!name || !role) {
+      sendJson(res, 400, { message: "name und role erforderlich" });
       return;
     }
 
-    const { subject, tutor, durationMinutes, level } = data;
-
-    if (!subject || !tutor || !durationMinutes || !level) {
-      sendJson(res, 400, { message: 'Bitte subject, tutor, durationMinutes und level angeben.' });
-      return;
-    }
-
-    const parsedDuration = Number(durationMinutes);
-    if (!Number.isFinite(parsedDuration) || parsedDuration <= 0) {
-      sendJson(res, 400, { message: 'durationMinutes muss eine positive Zahl sein.' });
-      return;
-    }
-
-    const newLesson = {
-      id: lessons.length + 1,
-      subject,
-      tutor,
-      durationMinutes: parsedDuration,
-      level,
+    const user = {
+      id: users.length + 1,
+      ...body,
+      createdAt: new Date().toISOString(),
     };
 
-    lessons.push(newLesson);
-    sendJson(res, 201, newLesson);
+    users.push(user);
+    sendJson(res, 201, user);
     return;
   }
 
-  sendJson(res, 404, { message: 'Route nicht gefunden' });
+  if (method === "GET" && parsedUrl.pathname === "/api/requests") {
+    sendJson(res, 200, requests);
+    return;
+  }
+
+  if (method === "POST" && parsedUrl.pathname === "/api/requests") {
+    const body = await parseBody(req);
+
+    const reqItem = {
+      id: requests.length + 1,
+      status: "pending",
+      createdAt: new Date().toISOString(),
+      ...body,
+    };
+
+    requests.push(reqItem);
+    sendJson(res, 201, reqItem);
+    return;
+  }
+
+  if (method === "PATCH" && parsedUrl.pathname.startsWith("/api/requests/")) {
+    const id = Number(parsedUrl.pathname.split("/").pop());
+    const body = await parseBody(req);
+
+    const reqItem = requests.find((r) => r.id === id);
+    if (!reqItem) {
+      sendJson(res, 404, { message: "Request nicht gefunden" });
+      return;
+    }
+
+    Object.assign(reqItem, body);
+    sendJson(res, 200, reqItem);
+    return;
+  }
+
+  sendJson(res, 404, { message: "Route nicht gefunden" });
 });
 
 server.listen(PORT, () => {
-  console.log(`API server läuft auf Port ${PORT}`);
+  console.log(`API läuft auf http://localhost:${PORT}`);
 });
