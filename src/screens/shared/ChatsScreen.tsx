@@ -5,22 +5,16 @@ import { useAppData } from "../context/AppDataContext";
 
 export default function ChatsScreen({ navigation }: any) {
   const { user } = useAuth();
-  const { chats, requests } = useAppData();
+  const { chats } = useAppData();
 
   const myId = (user?.id ?? user?.uid ?? "me") as string;
 
-  // ✅ nur meine Chats + nur accepted Requests
+  // ✅ nur meine Chats (Request-Status ist EGAL)
   const visibleChats = useMemo(() => {
-    return chats.filter((c: any) => {
-      // nur meine Chats
-      const isMine = c.teacherId === myId || c.studentId === myId;
-      if (!isMine) return false;
-
-      // nur accepted
-      const req = requests.find((r: any) => r.id === c.requestId);
-      return req?.status === "accepted";
-    });
-  }, [chats, requests, myId]);
+    return chats.filter(
+      (c: any) => c.teacherId === myId || c.studentId === myId
+    );
+  }, [chats, myId]);
 
   const openChat = (chat: any) => {
     navigation.navigate("ChatDetail", { chat });
@@ -32,7 +26,6 @@ export default function ChatsScreen({ navigation }: any) {
         Chats
       </Text>
 
-      {/* Debug */}
       <Text style={{ marginBottom: 10, opacity: 0.7 }}>
         MyId: {myId} | Chats: {chats.length} | Sichtbar: {visibleChats.length}
       </Text>
@@ -47,7 +40,12 @@ export default function ChatsScreen({ navigation }: any) {
           renderItem={({ item }: any) => (
             <TouchableOpacity
               onPress={() => openChat(item)}
-              style={{ borderWidth: 1, borderColor: "#ddd", borderRadius: 14, padding: 14 }}
+              style={{
+                borderWidth: 1,
+                borderColor: "#ddd",
+                borderRadius: 14,
+                padding: 14,
+              }}
             >
               <Text style={{ fontSize: 18, fontWeight: "800" }}>
                 {item.title}

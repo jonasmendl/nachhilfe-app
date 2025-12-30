@@ -143,6 +143,6 @@ const server = http.createServer(async (req, res) => {
   sendJson(res, 404, { message: "Route nicht gefunden" });
 });
 
-server.listen(PORT, () => {
-  console.log(`API läuft auf http://localhost:${PORT}`);
+server.listen(PORT, "0.0.0.0", () => {
+  console.log(`API läuft auf http://192.168.178.47:${PORT}`);
 });

@@ -2,10 +2,14 @@ import React, { useMemo } from "react";
 import { View, Text, TouchableOpacity, FlatList } from "react-native";
 import { useAuth } from "../context/AuthContext";
 import { useAppData } from "../context/AppDataContext";
+import { useNavigation } from "@react-navigation/native";
 
-export default function TeacherRequestScreen({ navigation }: any) {
+export default function TeacherRequestScreen() {
+  const navigation = useNavigation<any>();
+
   const { user } = useAuth();
-  const { requests, acceptRequest, rejectRequest, addDemoRequestForTeacher, resetAll } = useAppData();
+  const { requests, acceptRequest, rejectRequest, addDemoRequestForTeacher, resetAll } =
+    useAppData();
 
   const myTeacherId = (user?.id ?? user?.uid ?? "t1") as string;
   const myTeacherName = (user?.name ?? user?.displayName ?? "Ann A") as string;
@@ -18,15 +22,14 @@ export default function TeacherRequestScreen({ navigation }: any) {
   }, [requests, myTeacherId]);
 
   const addDemo = () => {
-    // ✅ erzeugt garantiert eine Anfrage an diesen Lehrer
     addDemoRequestForTeacher(myTeacherId, myTeacherName);
   };
 
   const accept = (req: any) => {
     const chat = acceptRequest(req.id);
     if (chat) {
-      // ✅ DIREKT in den Chat
-      navigation.navigate("ChatDetail", { chat });
+      // ✅ in den Root-Stack navigieren
+      navigation.getParent()?.getParent()?.navigate("ChatDetail", { chat });
     }
   };
 
@@ -40,7 +43,6 @@ export default function TeacherRequestScreen({ navigation }: any) {
         Anfragen
       </Text>
 
-      {/* Debug */}
       <Text style={{ marginBottom: 10, opacity: 0.7 }}>
         TeacherId: {myTeacherId} | Requests: {requests.length} | Pending: {pending.length}
       </Text>
