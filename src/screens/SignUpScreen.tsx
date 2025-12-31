@@ -19,7 +19,13 @@ export default function SignUpScreen({ navigation, route }: Props) {
       return;
     }
 
-    setUser({ name: name.trim(), email: email.trim(), role });
+    setUser({
+      id: role === "Teacher" ? "t1" : "s1",
+      name: name.trim(),
+      email: email.trim(),
+      role,
+    });
+    
 
     if (role === "Teacher") {
       navigation.replace("TeacherProfileSetup", {

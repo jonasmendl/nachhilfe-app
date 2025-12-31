@@ -1,188 +1,191 @@
 import React, { createContext, useContext, useEffect, useMemo, useState } from "react";
-import AsyncStorage from "@react-native-async-storage/async-storage";
+import { useAuth } from "./AuthContext";
+
+import {
+  getRequests as apiGetRequests,
+  createRequest as apiCreateRequest,
+  patchRequest as apiPatchRequest,
+  createChat as apiCreateChat,
+  getChats as apiGetChats,
+  getMessages as apiGetMessages,
+  sendMessage as apiSendMessage,
+} from "../api/api";
 
 export type RequestStatus = "pending" | "accepted" | "rejected";
 
 export type Request = {
-  id: string;
-  studentId: string;
-  studentName: string;
-  teacherId: string;
-  teacherName: string;
+  id: any;
+  studentId: any;
+  studentName?: string;
+  teacherId: any;
+  teacherName?: string;
   subject: string;
-  city: string;
-  when: string;
+  city?: string;
+  when?: string;
   status: RequestStatus;
-  createdAt: number;
+  createdAt?: any;
 };
 
 export type Chat = {
-  id: string;         // ✅ stabil: "c_" + requestId
+  id: any;
   title: string;
-  requestId: string;
-  studentId: string;
-  teacherId: string;
-  createdAt: number;
+  requestId: any;
+  studentId: any;
+  teacherId: any;
+  createdAt?: any;
 };
 
 export type Message = {
-  id: string;
-  chatId: string;
-  senderId: string;
+  id: any;
+  chatId: any;
+  senderId: any;
   text: string;
-  createdAt: number;
+  createdAt?: any;
 };
 
-type CreateRequestArgs = Omit<Request, "id" | "status" | "createdAt">;
+type CreateRequestArgs = {
+  studentId: any;
+  studentName?: string;
+  teacherId: any;
+  teacherName?: string;
+  subject: string;
+  city?: string;
+  when?: string;
+};
 
 type AppData = {
   requests: Request[];
   chats: Chat[];
   messages: Message[];
 
-  createRequest: (args: CreateRequestArgs) => void;
+  reloadAll: () => Promise<void>;
 
-  // ✅ gibt Chat zurück -> direkt in ChatDetail navigieren
-  acceptRequest: (requestId: string) => Chat | null;
+  createRequest: (args: CreateRequestArgs) => Promise<Request>;
+  acceptRequest: (request: Request) => Promise<Chat>;
+  rejectRequest: (request: Request) => Promise<void>;
 
-  rejectRequest: (requestId: string) => void;
+  loadMessages: (chatId: any) => Promise<Message[]>;
+  sendMessage: (chatId: any, senderId: any, text: string) => Promise<Message>;
+  messagesForChat: (chatId: any) => Message[];
 
-  sendMessage: (chatId: string, senderId: string, text: string) => void;
-  messagesForChat: (chatId: string) => Message[];
+  addDemoRequestForTeacher: (teacherId: any, teacherName?: string) => Promise<void>;
 
-  addDemoRequestForTeacher: (teacherId: string, teacherName: string) => void;
-
-  resetAll: () => void;
+  resetAllLocal: () => void; // nur UI Reset
 };
 
 const Ctx = createContext<AppData | null>(null);
 
-// ✅ neuer Key -> alte Daten werden ignoriert
-const STORAGE_KEY = "APP_DATA_V5";
-
-// ✅ ID helper
-const uid = (prefix: string) => `${prefix}_${Date.now()}_${Math.random().toString(16).slice(2)}`;
-
 export function AppDataProvider({ children }: { children: React.ReactNode }) {
-  const [hydrated, setHydrated] = useState(false);
+  const { user } = useAuth();
 
   const [requests, setRequests] = useState<Request[]>([]);
   const [chats, setChats] = useState<Chat[]>([]);
   const [messages, setMessages] = useState<Message[]>([]);
 
-  // Load
-  useEffect(() => {
-    (async () => {
-      try {
-        const raw = await AsyncStorage.getItem(STORAGE_KEY);
-        if (raw) {
-          const parsed = JSON.parse(raw);
-          setRequests(parsed.requests ?? []);
-          setChats(parsed.chats ?? []);
-          setMessages(parsed.messages ?? []);
-        } else {
-          setRequests([]);
-          setChats([]);
-          setMessages([]);
-        }
-      } catch {
-        setRequests([]);
-        setChats([]);
-        setMessages([]);
-      } finally {
-        setHydrated(true);
-      }
-    })();
-  }, []);
+  const myId = (user?.id ?? user?.uid ?? null) as any;
 
-  // Save
-  useEffect(() => {
-    if (!hydrated) return;
-    AsyncStorage.setItem(STORAGE_KEY, JSON.stringify({ requests, chats, messages })).catch(() => {});
-  }, [hydrated, requests, chats, messages]);
+  const reloadAll = async () => {
+    const reqs = await apiGetRequests();
+    setRequests(reqs);
 
-  const createRequest: AppData["createRequest"] = (args) => {
-    const req: Request = {
-      ...args,
-      id: uid("r"),
-      status: "pending",
-      createdAt: Date.now(),
-    };
-    setRequests((prev) => [...prev, req]);
+    if (myId != null) {
+      const ch = await apiGetChats(myId);
+      setChats(ch);
+    } else {
+      setChats([]);
+    }
   };
 
-  const acceptRequest: AppData["acceptRequest"] = (requestId) => {
-    let createdChat: Chat | null = null;
+  // initial load + wenn user wechselt
+  useEffect(() => {
+    reloadAll().catch((e) => console.error("❌ reloadAll failed:", e));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [myId]);
 
-    // ✅ alles aus prevReqs bauen -> nie stale
-    setRequests((prevReqs) => {
-      const req = prevReqs.find((r) => r.id === requestId);
-      if (!req) return prevReqs;
-
-      createdChat = {
-        id: `c_${requestId}`, // ✅ stabil & wiederfindbar
-        requestId,
-        studentId: req.studentId,
-        teacherId: req.teacherId,
-        title: `Chat mit ${req.studentName} (${req.subject})`,
-        createdAt: Date.now(),
-      };
-
-      setChats((prevChats) => {
-        // ✅ Chat existiert schon?
-        if (prevChats.some((c) => c.requestId === requestId)) return prevChats;
-        return [...prevChats, createdChat as Chat];
-      });
-
-      // ✅ status accepted
-      return prevReqs.map((r) => (r.id === requestId ? { ...r, status: "accepted" } : r));
+  const createRequest: AppData["createRequest"] = async (args) => {
+    const created = await apiCreateRequest({
+      ...args,
+      status: "pending",
     });
 
-    return createdChat;
+    setRequests((prev) => [...prev, created]);
+    return created;
   };
 
-  const rejectRequest: AppData["rejectRequest"] = (requestId) => {
-    setRequests((prev) => prev.map((r) => (r.id === requestId ? { ...r, status: "rejected" } : r)));
+  const acceptRequest: AppData["acceptRequest"] = async (request) => {
+    const chat = await apiCreateChat({
+      requestId: request.id,
+      studentId: request.studentId,
+      teacherId: request.teacherId,
+      title: `Chat mit ${request.studentName ?? "Student"} (${request.subject})`,
+    });
+
+    // Requests neu ziehen (damit status accepted stimmt)
+    const reqs = await apiGetRequests();
+    setRequests(reqs);
+
+    // Chats neu ziehen (damit Teacher/Student den Chat sieht)
+    if (myId != null) {
+      const ch = await apiGetChats(myId);
+      setChats(ch);
+    } else {
+      setChats([]);
+    }
+
+    return chat;
   };
 
-  const sendMessage: AppData["sendMessage"] = (chatId, senderId, text) => {
+  const rejectRequest: AppData["rejectRequest"] = async (request) => {
+    await apiPatchRequest(request.id, { status: "rejected" });
+
+    setRequests((prev) =>
+      prev.map((r) => (String(r.id) === String(request.id) ? { ...r, status: "rejected" } : r))
+    );
+  };
+
+  const loadMessages: AppData["loadMessages"] = async (chatId) => {
+    const list = await apiGetMessages(chatId);
+    // MVP: wir halten nur die Messages des zuletzt geöffneten Chats im State
+    setMessages(list);
+    return list;
+  };
+
+  const sendMessage: AppData["sendMessage"] = async (chatId, senderId, text) => {
     const t = text.trim();
-    if (!t) return;
+    if (!t) throw new Error("Empty message");
 
-    const msg: Message = {
-      id: uid("m"),
-      chatId,
-      senderId,
-      text: t,
-      createdAt: Date.now(),
-    };
+    const msg = await apiSendMessage(chatId, { senderId, text: t });
 
     setMessages((prev) => [...prev, msg]);
+    return msg;
   };
 
+  // ✅ DAS hat dir gefehlt:
   const messagesForChat: AppData["messagesForChat"] = (chatId) => {
-    return messages
-      .filter((m) => m.chatId === chatId)
-      .sort((a, b) => a.createdAt - b.createdAt);
+    return (messages ?? [])
+      .filter((m) => String(m.chatId) === String(chatId))
+      .sort((a, b) => (Number(a.createdAt ?? 0) - Number(b.createdAt ?? 0)));
   };
 
-  const addDemoRequestForTeacher: AppData["addDemoRequestForTeacher"] = (teacherId, teacherName) => {
-    createRequest({
+  const addDemoRequestForTeacher: AppData["addDemoRequestForTeacher"] = async (
+    teacherId,
+    teacherName
+  ) => {
+    await createRequest({
       studentId: "s_demo",
       studentName: "Jonas (Demo)",
       teacherId,
-      teacherName,
+      teacherName: teacherName ?? "Teacher",
       subject: "Mathe",
       city: "Berlin",
       when: "morgen 16:00",
     });
   };
 
-  const resetAll: AppData["resetAll"] = () => {
+  const resetAllLocal = () => {
     setRequests([]);
     setChats([]);
     setMessages([]);
-    AsyncStorage.removeItem(STORAGE_KEY).catch(() => {});
   };
 
   const value = useMemo<AppData>(
@@ -190,18 +193,18 @@ export function AppDataProvider({ children }: { children: React.ReactNode }) {
       requests,
       chats,
       messages,
+      reloadAll,
       createRequest,
       acceptRequest,
       rejectRequest,
+      loadMessages,
       sendMessage,
-      messagesForChat,
+      messagesForChat, // ✅ UND das musst du exportieren
       addDemoRequestForTeacher,
-      resetAll,
+      resetAllLocal,
     }),
     [requests, chats, messages]
   );
-
-  if (!hydrated) return null;
 
   return <Ctx.Provider value={value}>{children}</Ctx.Provider>;
 }
