@@ -1,132 +1,143 @@
-import React, { useEffect, useMemo, useState } from "react";
-import {
-  View,
-  Text,
-  TouchableOpacity,
-  FlatList,
-  ActivityIndicator,
-  Alert,
-} from "react-native";
-import { useAuth } from "../context/AuthContext";
+import React, { useCallback, useEffect, useState } from "react";
+import { View, Text, StyleSheet, ActivityIndicator, TouchableOpacity, Alert } from "react-native";
+import { useAppData } from "../context/AppDataContext";
+import { getRequests } from "../api/api";
 
-// 📱 Handy: Mac-IP
-const API_BASE = "http://192.168.178.47:3000";
-
-type RequestRow = {
-  id: string;
-  student_id: string;
-  student_name: string;
-  teacher_id: string;
-  subject?: string | null;
-  city?: string | null;
-  when?: string | null;
-  status: string;
-};
+const TEACHER_ID = "b8bdab57-8cd7-4183-b8b7-afb1bb885d6c";
+ // ✅ DEINE teacher UUID aus Supabase
 
 export default function TeacherRequestScreen() {
-  const { user } = useAuth();
-  const teacherId =
-    (user?.id ??
-      user?.uid ??
-      "b8bdab57-8cd7-4183-b8b7-afb1bb885d6c") as string;
+  const { acceptRequest, rejectRequest } = useAppData();
 
-  const [requests, setRequests] = useState<RequestRow[]>([]);
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+  const [requests, setRequests] = useState<any[]>([]);
 
-  const load = async () => {
+  const load = useCallback(async () => {
     setLoading(true);
-    const res = await fetch(`${API_BASE}/api/requests?teacherId=${teacherId}`);
-    const data = await res.json();
-    setRequests(Array.isArray(data) ? data : []);
-    setLoading(false);
-  };
+    setError(null);
+    try {
+      const list = await getRequests({ teacherId: TEACHER_ID });
+      setRequests(Array.isArray(list) ? list : []);
+    } catch (e: any) {
+      setError(String(e?.message || e));
+    } finally {
+      setLoading(false);
+    }
+  }, []);
 
   useEffect(() => {
     load();
-  }, [teacherId]);
-
-  const pending = useMemo(
-    () => requests.filter((r) => r.status === "pending"),
-    [requests]
-  );
-
-  const updateStatus = async (id: string, status: "accepted" | "rejected") => {
-    await fetch(`${API_BASE}/api/requests/${id}`, {
-      method: "PATCH",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ status }),
-    });
-    await load();
-  };
+  }, [load]);
 
   if (loading) {
     return (
-      <View style={{ flex: 1, justifyContent: "center", alignItems: "center" }}>
-        <ActivityIndicator />
-        <Text style={{ marginTop: 10 }}>Lade Anfragen…</Text>
+      <View style={styles.container}>
+        <Text style={styles.header}>Anfragen</Text>
+        <View style={styles.center}>
+          <ActivityIndicator />
+          <Text style={styles.sub}>Lade Anfragen…</Text>
+        </View>
+      </View>
+    );
+  }
+
+  if (error) {
+    return (
+      <View style={styles.container}>
+        <Text style={styles.header}>Anfragen</Text>
+        <Text style={styles.title}>Fehler 😅</Text>
+        <Text style={styles.sub}>{error}</Text>
+        <TouchableOpacity style={styles.btn} onPress={load}>
+          <Text style={styles.btnText}>Nochmal laden</Text>
+        </TouchableOpacity>
+      </View>
+    );
+  }
+
+  if (requests.length === 0) {
+    return (
+      <View style={styles.container}>
+        <Text style={styles.header}>Anfragen</Text>
+        <Text style={styles.title}>Keine Anfragen</Text>
+        <Text style={styles.sub}>Für dich ist gerade nichts offen.</Text>
+        <TouchableOpacity style={styles.btn} onPress={load}>
+          <Text style={styles.btnText}>Refresh</Text>
+        </TouchableOpacity>
       </View>
     );
   }
 
   return (
-    <View style={{ flex: 1, padding: 16 }}>
-      <Text style={{ fontSize: 22, fontWeight: "800", marginBottom: 12 }}>
-        Anfragen
-      </Text>
+    <View style={styles.container}>
+      <Text style={styles.header}>Anfragen</Text>
 
-      {pending.length === 0 ? (
-        <Text style={{ opacity: 0.6 }}>Keine offenen Anfragen</Text>
-      ) : (
-        <FlatList
-          data={pending}
-          keyExtractor={(i) => i.id}
-          renderItem={({ item }) => (
-            <View
-              style={{
-                padding: 14,
-                borderWidth: 1,
-                borderRadius: 12,
-                marginBottom: 10,
+      {requests.map((r) => (
+        <View key={String(r.id)} style={styles.card}>
+          <Text style={styles.name}>{r.studentName ?? "Schüler"}</Text>
+          <Text style={styles.sub}>
+            {r.subject ?? "—"} • {r.city ?? "—"}
+          </Text>
+          <Text style={styles.sub}>Status: {r.status ?? "—"}</Text>
+
+          <View style={styles.row}>
+            <TouchableOpacity
+              style={[styles.actionBtn, styles.reject]}
+              onPress={async () => {
+                try {
+                  await rejectRequest(r);
+                  await load();
+                } catch (e: any) {
+                  Alert.alert("Fehler", String(e?.message || e));
+                }
               }}
             >
-              <Text style={{ fontWeight: "800" }}>{item.student_name}</Text>
-              <Text>
-                {item.subject ?? "—"} • {item.city ?? "—"} • {item.when ?? "—"}
-              </Text>
+              <Text style={styles.actionText}>Ablehnen</Text>
+            </TouchableOpacity>
 
-              <View style={{ flexDirection: "row", gap: 10, marginTop: 10 }}>
-                <TouchableOpacity
-                  onPress={() => {
-                    updateStatus(item.id, "accepted");
-                    Alert.alert("Angenommen");
-                  }}
-                  style={{
-                    padding: 10,
-                    backgroundColor: "#c8f7c5",
-                    borderRadius: 10,
-                  }}
-                >
-                  <Text>Annehmen</Text>
-                </TouchableOpacity>
-
-                <TouchableOpacity
-                  onPress={() => {
-                    updateStatus(item.id, "rejected");
-                    Alert.alert("Abgelehnt");
-                  }}
-                  style={{
-                    padding: 10,
-                    backgroundColor: "#eee",
-                    borderRadius: 10,
-                  }}
-                >
-                  <Text>Ablehnen</Text>
-                </TouchableOpacity>
-              </View>
-            </View>
-          )}
-        />
-      )}
+            <TouchableOpacity
+              style={[styles.actionBtn, styles.accept]}
+              onPress={async () => {
+                try {
+                  const chat = await acceptRequest(r);
+                  await load();
+                  Alert.alert("Angenommen ✅", `Chat erstellt: ${chat?.id ?? ""}`);
+                } catch (e: any) {
+                  Alert.alert("Fehler", String(e?.message || e));
+                }
+              }}
+            >
+              <Text style={styles.actionText}>Annehmen</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+      ))}
     </View>
   );
 }
+
+const styles = StyleSheet.create({
+  container: { flex: 1, padding: 16, backgroundColor: "#fff" },
+  header: { fontSize: 22, fontWeight: "800", marginBottom: 12 },
+  center: { flex: 1, alignItems: "center", justifyContent: "center" },
+  title: { fontSize: 20, fontWeight: "900", marginTop: 12 },
+  sub: { opacity: 0.65, marginTop: 6 },
+
+  card: {
+    borderWidth: 1,
+    borderColor: "#eee",
+    borderRadius: 16,
+    padding: 14,
+    marginBottom: 12,
+  },
+  name: { fontSize: 18, fontWeight: "900" },
+
+  row: { flexDirection: "row", gap: 10, marginTop: 12 },
+  actionBtn: { flex: 1, padding: 12, borderRadius: 12, alignItems: "center" },
+  accept: { backgroundColor: "#c8f7c5" },
+  reject: { backgroundColor: "#eee" },
+  actionText: { fontWeight: "800" },
+
+  btn: { marginTop: 14, backgroundColor: "#111", padding: 12, borderRadius: 12, alignItems: "center" },
+  btnText: { color: "#fff", fontWeight: "800" },
+});
