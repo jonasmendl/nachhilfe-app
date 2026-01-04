@@ -9,7 +9,7 @@ import {
   Alert,
 } from "react-native";
 import { useAuth } from "../context/AuthContext";
-import { getMessages, sendMessage } from "../api/api"; // <-- Pfad ggf. anpassen!
+import { getMessages, sendMessage } from "../api/api";
 
 type MessageRow = {
   id: string;
@@ -21,7 +21,7 @@ type MessageRow = {
 
 export default function ChatDetailsScreen({ route }: any) {
   const { user } = useAuth();
-  const { chat } = route.params;
+  const { chat } = route.params ?? {};
 
   const [text, setText] = useState("");
   const [loading, setLoading] = useState(true);
@@ -29,16 +29,16 @@ export default function ChatDetailsScreen({ route }: any) {
   const [messages, setMessages] = useState<MessageRow[]>([]);
   const [error, setError] = useState<string | null>(null);
 
-  const myId = (user?.id ?? user?.uid ?? "me") as string;
-  const title = chat?.title ?? "Chat";
+  const myId = String(user?.id ?? user?.uid ?? "me");
   const chatId = chat?.id;
+  const title = chat?.title ?? `Chat ${chatId ? String(chatId).slice(0, 6) : ""}`;
 
   const load = async () => {
     if (!chatId) return;
     try {
       setLoading(true);
       setError(null);
-      const data = await getMessages(chatId);
+      const data = await getMessages(String(chatId));
       setMessages(Array.isArray(data) ? data : []);
     } catch (e: any) {
       setError(String(e?.message || e));
@@ -49,6 +49,7 @@ export default function ChatDetailsScreen({ route }: any) {
 
   useEffect(() => {
     load();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [chatId]);
 
   const onSend = async () => {
@@ -58,7 +59,6 @@ export default function ChatDetailsScreen({ route }: any) {
     try {
       setSending(true);
 
-      // 1) Optimistic UI
       const optimistic: MessageRow = {
         id: `temp-${Date.now()}`,
         chat_id: String(chatId),
@@ -66,17 +66,14 @@ export default function ChatDetailsScreen({ route }: any) {
         text: t,
         created_at: new Date().toISOString(),
       };
+
       setMessages((prev) => [...prev, optimistic]);
       setText("");
 
-      // 2) Persist via API
       await sendMessage({ chatId: String(chatId), senderId: myId, text: t });
-
-      // 3) Reload (damit echte IDs/Sortierung passen)
       await load();
     } catch (e: any) {
       Alert.alert("Fehler", String(e?.message || e));
-      // optional: reload um optimistic message ggf. zu entfernen
       await load();
     } finally {
       setSending(false);
@@ -113,10 +110,10 @@ export default function ChatDetailsScreen({ route }: any) {
       ) : (
         <FlatList
           data={messages}
-          keyExtractor={(m) => m.id}
-          contentContainerStyle={{ gap: 10, paddingVertical: 10 }}
+          keyExtractor={(m) => String(m.id)}
+          contentContainerStyle={{ gap: 10, paddingVertical: 10, paddingBottom: 20 }}
           renderItem={({ item }) => {
-            const isMe = item.sender_id === myId;
+            const isMe = String(item.sender_id) === myId;
             return (
               <View
                 style={{

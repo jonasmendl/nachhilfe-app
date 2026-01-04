@@ -7,20 +7,18 @@ dns.setDefaultResultOrder("ipv4first");
 
 const PORT = process.env.PORT || 4000;
 
-// Supabase Client (nur Backend!)
 const supabase = createClient(
   process.env.SUPABASE_URL,
   process.env.SUPABASE_SERVICE_ROLE_KEY
 );
 
-// Debug
 console.log("ENV check:", {
   hasUrl: !!process.env.SUPABASE_URL,
   url: process.env.SUPABASE_URL,
   hasServiceKey: !!process.env.SUPABASE_SERVICE_ROLE_KEY,
   port: process.env.PORT,
 });
-console.log("SERVER VERSION: full-api-1");
+console.log("SERVER VERSION: full-api-2-auth-uid");
 
 /* ---------------- CORS ---------------- */
 
@@ -79,7 +77,7 @@ const server = http.createServer(async (req, res) => {
     return;
   }
 
-  /* ---------------- Teachers (Supabase) ---------------- */
+  /* ---------------- Teachers ---------------- */
 
   // GET /api/teachers
   if (method === "GET" && parsedUrl.pathname === "/api/teachers") {
@@ -89,57 +87,78 @@ const server = http.createServer(async (req, res) => {
         .select("*")
         .order("created_at", { ascending: false });
 
-      if (error) {
-        sendJson(res, 500, { ok: false, error: error.message });
-        return;
-      }
-
-      sendJson(res, 200, data || []);
-      return;
+      if (error) return sendJson(res, 500, { ok: false, error: error.message });
+      return sendJson(res, 200, data || []);
     } catch (e) {
-      sendJson(res, 500, { ok: false, error: String(e) });
-      return;
+      return sendJson(res, 500, { ok: false, error: String(e) });
     }
   }
 
-  // POST /api/teachers
-  if (method === "POST" && parsedUrl.pathname === "/api/teachers") {
-    const body = await parseBody(req);
-    if (isInvalidJson(body)) {
-      sendJson(res, 400, { ok: false, message: "Ungültiges JSON" });
-      return;
-    }
-
-    if (!body.name) {
-      sendJson(res, 400, { ok: false, message: "name ist erforderlich" });
-      return;
-    }
+  // ✅ NEW: GET /api/teachers/by-auth?uid=...
+  if (method === "GET" && parsedUrl.pathname === "/api/teachers/by-auth") {
+    const uid = parsedUrl.searchParams.get("uid");
+    if (!uid) return sendJson(res, 400, { ok: false, message: "uid erforderlich" });
 
     try {
       const { data, error } = await supabase
         .from("teachers")
-        .insert({
-          name: body.name,
-          subject: body.subject ?? null,
-          bio: body.bio ?? null,
-        })
-        .select()
-        .single();
+        .select("*")
+        .eq("auth_uid", String(uid))
+        .maybeSingle();
 
-      if (error) {
-        sendJson(res, 500, { ok: false, error: error.message });
-        return;
-      }
+      if (error) return sendJson(res, 500, { ok: false, error: error.message });
+      if (!data) return sendJson(res, 404, { ok: false, message: "teacher nicht gefunden" });
 
-      sendJson(res, 201, data);
-      return;
+      return sendJson(res, 200, data);
     } catch (e) {
-      sendJson(res, 500, { ok: false, error: String(e) });
-      return;
+      return sendJson(res, 500, { ok: false, error: String(e) });
     }
   }
 
-  /* ---------------- Requests (Supabase) ---------------- */
+  // ✅ UPDATED: POST /api/teachers (upsert by auth_uid)
+  if (method === "POST" && parsedUrl.pathname === "/api/teachers") {
+    const body = await parseBody(req);
+    if (isInvalidJson(body)) return sendJson(res, 400, { ok: false, message: "Ungültiges JSON" });
+
+    const {
+      authUid,
+      name,
+      subject,
+      city,
+      bio,
+      pricePerHour,
+    } = body;
+
+    if (!authUid || !name) {
+      return sendJson(res, 400, { ok: false, message: "authUid und name sind erforderlich" });
+    }
+
+    try {
+      // Upsert über auth_uid (unique index nötig/empfohlen)
+      const { data, error } = await supabase
+        .from("teachers")
+        .upsert(
+          {
+            auth_uid: String(authUid),
+            name: String(name),
+            subject: subject ?? null,
+            city: city ?? null,
+            bio: bio ?? null,
+            pricePerHour: pricePerHour ?? null,
+          },
+          { onConflict: "auth_uid" }
+        )
+        .select()
+        .single();
+
+      if (error) return sendJson(res, 500, { ok: false, error: error.message });
+      return sendJson(res, 201, data);
+    } catch (e) {
+      return sendJson(res, 500, { ok: false, error: String(e) });
+    }
+  }
+
+  /* ---------------- Requests ---------------- */
 
   // GET /api/requests?teacherId=...&studentId=...
   if (method === "GET" && parsedUrl.pathname === "/api/requests") {
@@ -156,36 +175,26 @@ const server = http.createServer(async (req, res) => {
       if (studentId) q = q.eq("student_id", studentId);
 
       const { data, error } = await q;
+      if (error) return sendJson(res, 500, { ok: false, error: error.message });
 
-      if (error) {
-        sendJson(res, 500, { ok: false, error: error.message });
-        return;
-      }
-
-      sendJson(res, 200, data || []);
-      return;
+      return sendJson(res, 200, data || []);
     } catch (e) {
-      sendJson(res, 500, { ok: false, error: String(e) });
-      return;
+      return sendJson(res, 500, { ok: false, error: String(e) });
     }
   }
 
   // POST /api/requests
   if (method === "POST" && parsedUrl.pathname === "/api/requests") {
     const body = await parseBody(req);
-    if (isInvalidJson(body)) {
-      sendJson(res, 400, { ok: false, message: "Ungültiges JSON" });
-      return;
-    }
+    if (isInvalidJson(body)) return sendJson(res, 400, { ok: false, message: "Ungültiges JSON" });
 
     const { studentId, studentName, teacherId, teacherName, subject, city, when } = body;
 
     if (!studentId || !studentName || !teacherId || !teacherName) {
-      sendJson(res, 400, {
+      return sendJson(res, 400, {
         ok: false,
         message: "studentId, studentName, teacherId, teacherName sind erforderlich",
       });
-      return;
     }
 
     try {
@@ -204,34 +213,24 @@ const server = http.createServer(async (req, res) => {
         .select()
         .single();
 
-      if (error) {
-        sendJson(res, 500, { ok: false, error: error.message });
-        return;
-      }
-
-      sendJson(res, 201, data);
-      return;
+      if (error) return sendJson(res, 500, { ok: false, error: error.message });
+      return sendJson(res, 201, data);
     } catch (e) {
-      sendJson(res, 500, { ok: false, error: String(e) });
-      return;
+      return sendJson(res, 500, { ok: false, error: String(e) });
     }
   }
 
-  // PATCH /api/requests/:id  (status: pending|accepted|rejected)
+  // PATCH /api/requests/:id
   if (method === "PATCH" && parsedUrl.pathname.startsWith("/api/requests/")) {
     const id = parsedUrl.pathname.split("/").pop();
     const body = await parseBody(req);
 
-    if (isInvalidJson(body)) {
-      sendJson(res, 400, { ok: false, message: "Ungültiges JSON" });
-      return;
-    }
+    if (isInvalidJson(body)) return sendJson(res, 400, { ok: false, message: "Ungültiges JSON" });
 
     const { status } = body;
     const allowed = ["pending", "accepted", "rejected"];
     if (!allowed.includes(status)) {
-      sendJson(res, 400, { ok: false, message: "status muss pending|accepted|rejected sein" });
-      return;
+      return sendJson(res, 400, { ok: false, message: "status muss pending|accepted|rejected sein" });
     }
 
     try {
@@ -242,52 +241,35 @@ const server = http.createServer(async (req, res) => {
         .select()
         .single();
 
-      if (error) {
-        sendJson(res, 500, { ok: false, error: error.message });
-        return;
-      }
-
-      sendJson(res, 200, data);
-      return;
+      if (error) return sendJson(res, 500, { ok: false, error: error.message });
+      return sendJson(res, 200, data);
     } catch (e) {
-      sendJson(res, 500, { ok: false, error: String(e) });
-      return;
+      return sendJson(res, 500, { ok: false, error: String(e) });
     }
   }
 
-  /* ---------------- Chats (Supabase) ---------------- */
+  /* ---------------- Chats ---------------- */
 
-  // POST /api/chats  { requestId, studentId, teacherId }
+  // POST /api/chats { requestId, studentId, teacherId }
   if (method === "POST" && parsedUrl.pathname === "/api/chats") {
     const body = await parseBody(req);
-    if (isInvalidJson(body)) {
-      sendJson(res, 400, { ok: false, message: "Ungültiges JSON" });
-      return;
-    }
+    if (isInvalidJson(body)) return sendJson(res, 400, { ok: false, message: "Ungültiges JSON" });
 
     const { requestId, studentId, teacherId } = body;
     if (!requestId || !studentId || !teacherId) {
-      sendJson(res, 400, { ok: false, message: "requestId, studentId, teacherId erforderlich" });
-      return;
+      return sendJson(res, 400, { ok: false, message: "requestId, studentId, teacherId erforderlich" });
     }
 
     try {
-      // bereits vorhanden?
       const existing = await supabase
         .from("chats")
         .select("*")
         .eq("request_id", String(requestId))
         .maybeSingle();
 
-      if (existing.error) {
-        sendJson(res, 500, { ok: false, error: existing.error.message });
-        return;
-      }
+      if (existing.error) return sendJson(res, 500, { ok: false, error: existing.error.message });
 
-      if (existing.data) {
-        sendJson(res, 200, existing.data);
-        return;
-      }
+      if (existing.data) return sendJson(res, 200, existing.data);
 
       const created = await supabase
         .from("chats")
@@ -299,26 +281,18 @@ const server = http.createServer(async (req, res) => {
         .select()
         .single();
 
-      if (created.error) {
-        sendJson(res, 500, { ok: false, error: created.error.message });
-        return;
-      }
+      if (created.error) return sendJson(res, 500, { ok: false, error: created.error.message });
 
-      sendJson(res, 201, created.data);
-      return;
+      return sendJson(res, 201, created.data);
     } catch (e) {
-      sendJson(res, 500, { ok: false, error: String(e) });
-      return;
+      return sendJson(res, 500, { ok: false, error: String(e) });
     }
   }
 
   // GET /api/chats?userId=...
   if (method === "GET" && parsedUrl.pathname === "/api/chats") {
     const userId = parsedUrl.searchParams.get("userId");
-    if (!userId) {
-      sendJson(res, 400, { ok: false, message: "userId erforderlich" });
-      return;
-    }
+    if (!userId) return sendJson(res, 400, { ok: false, message: "userId erforderlich" });
 
     try {
       const { data, error } = await supabase
@@ -327,28 +301,19 @@ const server = http.createServer(async (req, res) => {
         .or(`student_id.eq.${userId},teacher_id.eq.${userId}`)
         .order("created_at", { ascending: false });
 
-      if (error) {
-        sendJson(res, 500, { ok: false, error: error.message });
-        return;
-      }
-
-      sendJson(res, 200, data || []);
-      return;
+      if (error) return sendJson(res, 500, { ok: false, error: error.message });
+      return sendJson(res, 200, data || []);
     } catch (e) {
-      sendJson(res, 500, { ok: false, error: String(e) });
-      return;
+      return sendJson(res, 500, { ok: false, error: String(e) });
     }
   }
 
-  /* ---------------- Messages (Supabase) ---------------- */
+  /* ---------------- Messages ---------------- */
 
   // GET /api/messages?chatId=...
   if (method === "GET" && parsedUrl.pathname === "/api/messages") {
     const chatId = parsedUrl.searchParams.get("chatId");
-    if (!chatId) {
-      sendJson(res, 400, { ok: false, message: "chatId erforderlich" });
-      return;
-    }
+    if (!chatId) return sendJson(res, 400, { ok: false, message: "chatId erforderlich" });
 
     try {
       const { data, error } = await supabase
@@ -357,31 +322,21 @@ const server = http.createServer(async (req, res) => {
         .eq("chat_id", String(chatId))
         .order("created_at", { ascending: true });
 
-      if (error) {
-        sendJson(res, 500, { ok: false, error: error.message });
-        return;
-      }
-
-      sendJson(res, 200, data || []);
-      return;
+      if (error) return sendJson(res, 500, { ok: false, error: error.message });
+      return sendJson(res, 200, data || []);
     } catch (e) {
-      sendJson(res, 500, { ok: false, error: String(e) });
-      return;
+      return sendJson(res, 500, { ok: false, error: String(e) });
     }
   }
 
-  // POST /api/messages  { chatId, senderId, text }
+  // POST /api/messages
   if (method === "POST" && parsedUrl.pathname === "/api/messages") {
     const body = await parseBody(req);
-    if (isInvalidJson(body)) {
-      sendJson(res, 400, { ok: false, message: "Ungültiges JSON" });
-      return;
-    }
+    if (isInvalidJson(body)) return sendJson(res, 400, { ok: false, message: "Ungültiges JSON" });
 
     const { chatId, senderId, text } = body;
     if (!chatId || !senderId || !text) {
-      sendJson(res, 400, { ok: false, message: "chatId, senderId, text erforderlich" });
-      return;
+      return sendJson(res, 400, { ok: false, message: "chatId, senderId, text erforderlich" });
     }
 
     try {
@@ -395,22 +350,15 @@ const server = http.createServer(async (req, res) => {
         .select()
         .single();
 
-      if (error) {
-        sendJson(res, 500, { ok: false, error: error.message });
-        return;
-      }
-
-      sendJson(res, 201, data);
-      return;
+      if (error) return sendJson(res, 500, { ok: false, error: error.message });
+      return sendJson(res, 201, data);
     } catch (e) {
-      sendJson(res, 500, { ok: false, error: String(e) });
-      return;
+      return sendJson(res, 500, { ok: false, error: String(e) });
     }
   }
 
   /* -------- Fallback -------- */
-
-  sendJson(res, 404, { message: "Route nicht gefunden" });
+  return sendJson(res, 404, { message: "Route nicht gefunden" });
 });
 
 server.listen(PORT, "0.0.0.0", () => {

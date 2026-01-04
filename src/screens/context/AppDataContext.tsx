@@ -14,41 +14,41 @@ import {
 export type RequestStatus = "pending" | "accepted" | "rejected";
 
 export type Request = {
-  id: any;
-  studentId: any;
+  id: string;
+  studentId: string;
   studentName?: string;
-  teacherId: any;
+  teacherId: string;
   teacherName?: string;
-  subject: string;
+  subject?: string;
   city?: string;
   when?: string;
   status: RequestStatus;
-  createdAt?: any;
+  createdAt?: string;
 };
 
 export type Chat = {
-  id: any;
-  title: string;
-  requestId: any;
-  studentId: any;
-  teacherId: any;
-  createdAt?: any;
+  id: string;
+  requestId: string;
+  studentId: string;
+  teacherId: string;
+  createdAt?: string;
+  title?: string; // optional
 };
 
 export type Message = {
-  id: any;
-  chatId: any;
-  senderId: any;
+  id: string;
+  chatId: string;
+  senderId: string;
   text: string;
-  createdAt?: any;
+  createdAt?: string;
 };
 
 type CreateRequestArgs = {
-  studentId: any;
+  studentId: string;
   studentName?: string;
-  teacherId: any;
+  teacherId: string;
   teacherName?: string;
-  subject: string;
+  subject?: string;
   city?: string;
   when?: string;
 };
@@ -59,21 +59,61 @@ type AppData = {
   messages: Message[];
 
   reloadAll: () => Promise<void>;
+  reloadRequestsForTeacher: (teacherId: string) => Promise<Request[]>;
+  reloadChatsForMe: () => Promise<Chat[]>;
 
   createRequest: (args: CreateRequestArgs) => Promise<Request>;
   acceptRequest: (request: Request) => Promise<Chat>;
   rejectRequest: (request: Request) => Promise<void>;
 
-  loadMessages: (chatId: any) => Promise<Message[]>;
-  sendMessage: (chatId: any, senderId: any, text: string) => Promise<Message>;
-  messagesForChat: (chatId: any) => Message[];
+  loadMessages: (chatId: string) => Promise<Message[]>;
+  sendMessage: (chatId: string, senderId: string, text: string) => Promise<Message>;
+  messagesForChat: (chatId: string) => Message[];
 
-  addDemoRequestForTeacher: (teacherId: any, teacherName?: string) => Promise<void>;
-
-  resetAllLocal: () => void; // nur UI Reset
+  resetAllLocal: () => void;
 };
 
 const Ctx = createContext<AppData | null>(null);
+
+/* ---------------- Normalizer (snake_case -> camelCase) ---------------- */
+
+function normRequest(r: any): Request {
+  return {
+    id: String(r.id),
+    studentId: String(r.studentId ?? r.student_id ?? ""),
+    studentName: r.studentName ?? r.student_name ?? undefined,
+    teacherId: String(r.teacherId ?? r.teacher_id ?? ""),
+    teacherName: r.teacherName ?? r.teacher_name ?? undefined,
+    subject: r.subject ?? undefined,
+    city: r.city ?? undefined,
+    when: r.when ?? undefined,
+    status: (r.status ?? "pending") as RequestStatus,
+    createdAt: r.createdAt ?? r.created_at ?? undefined,
+  };
+}
+
+function normChat(c: any): Chat {
+  return {
+    id: String(c.id),
+    requestId: String(c.requestId ?? c.request_id ?? ""),
+    studentId: String(c.studentId ?? c.student_id ?? ""),
+    teacherId: String(c.teacherId ?? c.teacher_id ?? ""),
+    createdAt: c.createdAt ?? c.created_at ?? undefined,
+    title: c.title ?? undefined,
+  };
+}
+
+function normMessage(m: any): Message {
+  return {
+    id: String(m.id),
+    chatId: String(m.chatId ?? m.chat_id ?? ""),
+    senderId: String(m.senderId ?? m.sender_id ?? ""),
+    text: String(m.text ?? ""),
+    createdAt: m.createdAt ?? m.created_at ?? undefined,
+  };
+}
+
+/* ---------------- Provider ---------------- */
 
 export function AppDataProvider({ children }: { children: React.ReactNode }) {
   const { user } = useAuth();
@@ -82,55 +122,75 @@ export function AppDataProvider({ children }: { children: React.ReactNode }) {
   const [chats, setChats] = useState<Chat[]>([]);
   const [messages, setMessages] = useState<Message[]>([]);
 
-  const myId = (user?.id ?? user?.uid ?? null) as any;
+  const myId = String(user?.id ?? user?.uid ?? "");
 
-  const reloadAll = async () => {
-    const reqs = await apiGetRequests();
-    setRequests(reqs);
-
-    if (myId != null) {
-      const ch = await apiGetChats(myId);
-      setChats(ch);
-    } else {
-      setChats([]);
-    }
+  const reloadRequests = async () => {
+    const raw = await apiGetRequests();
+    const normalized = (Array.isArray(raw) ? raw : []).map(normRequest);
+    setRequests(normalized);
+    return normalized;
   };
 
-  // initial load + wenn user wechselt
+  const reloadRequestsForTeacher: AppData["reloadRequestsForTeacher"] = async (teacherId) => {
+    const raw = await apiGetRequests({ teacherId });
+    const normalized = (Array.isArray(raw) ? raw : []).map(normRequest);
+    setRequests(normalized);
+    return normalized;
+  };
+
+  const reloadChatsForMe: AppData["reloadChatsForMe"] = async () => {
+    if (!myId) {
+      setChats([]);
+      return [];
+    }
+    const raw = await apiGetChats(myId);
+    const normalized = (Array.isArray(raw) ? raw : []).map(normChat);
+    setChats(normalized);
+    return normalized;
+  };
+
+  const reloadAll = async () => {
+    await reloadRequests();
+    await reloadChatsForMe();
+  };
+
   useEffect(() => {
     reloadAll().catch((e) => console.error("❌ reloadAll failed:", e));
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [myId]);
 
   const createRequest: AppData["createRequest"] = async (args) => {
-    const created = await apiCreateRequest({
-      ...args,
-      status: "pending",
+    const createdRaw = await apiCreateRequest({
+      studentId: args.studentId,
+      studentName: args.studentName,
+      teacherId: args.teacherId,
+      teacherName: args.teacherName,
+      subject: args.subject,
+      city: args.city,
+      when: args.when,
     });
 
-    setRequests((prev) => [...prev, created]);
+    const created = normRequest(createdRaw);
+    setRequests((prev) => [created, ...prev]);
     return created;
   };
 
   const acceptRequest: AppData["acceptRequest"] = async (request) => {
-    const chat = await apiCreateChat({
+    // 1) request status accepted
+    await apiPatchRequest(request.id, { status: "accepted" });
+
+    // 2) chat erstellen/holen (Backend erstellt wenn nicht existiert)
+    const chatRaw = await apiCreateChat({
       requestId: request.id,
       studentId: request.studentId,
       teacherId: request.teacherId,
-      title: `Chat mit ${request.studentName ?? "Student"} (${request.subject})`,
     });
 
-    // Requests neu ziehen (damit status accepted stimmt)
-    const reqs = await apiGetRequests();
-    setRequests(reqs);
+    const chat = normChat(chatRaw);
 
-    // Chats neu ziehen (damit Teacher/Student den Chat sieht)
-    if (myId != null) {
-      const ch = await apiGetChats(myId);
-      setChats(ch);
-    } else {
-      setChats([]);
-    }
+    // 3) refresh
+    await reloadRequests();
+    await reloadChatsForMe();
 
     return chat;
   };
@@ -138,48 +198,39 @@ export function AppDataProvider({ children }: { children: React.ReactNode }) {
   const rejectRequest: AppData["rejectRequest"] = async (request) => {
     await apiPatchRequest(request.id, { status: "rejected" });
 
+    // lokal updaten + refresh optional
     setRequests((prev) =>
-      prev.map((r) => (String(r.id) === String(request.id) ? { ...r, status: "rejected" } : r))
+      prev.map((r) => (r.id === request.id ? { ...r, status: "rejected" } : r))
     );
   };
 
   const loadMessages: AppData["loadMessages"] = async (chatId) => {
-    const list = await apiGetMessages(chatId);
-    // MVP: wir halten nur die Messages des zuletzt geöffneten Chats im State
-    setMessages(list);
-    return list;
+    const raw = await apiGetMessages(chatId);
+    const normalized = (Array.isArray(raw) ? raw : []).map(normMessage);
+    setMessages(normalized);
+    return normalized;
   };
 
   const sendMessage: AppData["sendMessage"] = async (chatId, senderId, text) => {
     const t = text.trim();
     if (!t) throw new Error("Empty message");
 
-    const msg = await apiSendMessage(chatId, { senderId, text: t });
+    // api.ts erwartet payload { chatId, senderId, text }
+    const raw = await apiSendMessage({ chatId, senderId, text: t });
+    const msg = normMessage(raw);
 
     setMessages((prev) => [...prev, msg]);
     return msg;
   };
 
-  // ✅ DAS hat dir gefehlt:
   const messagesForChat: AppData["messagesForChat"] = (chatId) => {
     return (messages ?? [])
-      .filter((m) => String(m.chatId) === String(chatId))
-      .sort((a, b) => (Number(a.createdAt ?? 0) - Number(b.createdAt ?? 0)));
-  };
-
-  const addDemoRequestForTeacher: AppData["addDemoRequestForTeacher"] = async (
-    teacherId,
-    teacherName
-  ) => {
-    await createRequest({
-      studentId: "s_demo",
-      studentName: "Jonas (Demo)",
-      teacherId,
-      teacherName: teacherName ?? "Teacher",
-      subject: "Mathe",
-      city: "Berlin",
-      when: "morgen 16:00",
-    });
+      .filter((m) => m.chatId === String(chatId))
+      .sort((a, b) => {
+        const ta = Date.parse(a.createdAt ?? "") || 0;
+        const tb = Date.parse(b.createdAt ?? "") || 0;
+        return ta - tb;
+      });
   };
 
   const resetAllLocal = () => {
@@ -194,13 +245,14 @@ export function AppDataProvider({ children }: { children: React.ReactNode }) {
       chats,
       messages,
       reloadAll,
+      reloadRequestsForTeacher,
+      reloadChatsForMe,
       createRequest,
       acceptRequest,
       rejectRequest,
       loadMessages,
       sendMessage,
-      messagesForChat, // ✅ UND das musst du exportieren
-      addDemoRequestForTeacher,
+      messagesForChat,
       resetAllLocal,
     }),
     [requests, chats, messages]

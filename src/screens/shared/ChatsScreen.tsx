@@ -7,12 +7,11 @@ export default function ChatsScreen({ navigation }: any) {
   const { user } = useAuth();
   const { chats } = useAppData();
 
-  const myId = (user?.id ?? user?.uid ?? "me") as string;
+  const myId = String(user?.id ?? user?.uid ?? "");
 
-  // ✅ nur meine Chats (Request-Status ist EGAL)
   const visibleChats = useMemo(() => {
-    return chats.filter(
-      (c: any) => c.teacherId === myId || c.studentId === myId
+    return (chats ?? []).filter(
+      (c: any) => String(c.teacherId ?? c.teacher_id) === myId || String(c.studentId ?? c.student_id) === myId
     );
   }, [chats, myId]);
 
@@ -35,8 +34,8 @@ export default function ChatsScreen({ navigation }: any) {
       ) : (
         <FlatList
           data={visibleChats}
-          keyExtractor={(c: any) => c.id}
-          contentContainerStyle={{ gap: 12 }}
+          keyExtractor={(c: any) => String(c.id)}
+          contentContainerStyle={{ gap: 12, paddingBottom: 120 }}
           renderItem={({ item }: any) => (
             <TouchableOpacity
               onPress={() => openChat(item)}
@@ -48,7 +47,7 @@ export default function ChatsScreen({ navigation }: any) {
               }}
             >
               <Text style={{ fontSize: 18, fontWeight: "800" }}>
-                {item.title}
+                {item.title ?? `Chat ${String(item.id).slice(0, 6)}`}
               </Text>
               <Text style={{ opacity: 0.6, marginTop: 4 }}>
                 Tippe zum Öffnen

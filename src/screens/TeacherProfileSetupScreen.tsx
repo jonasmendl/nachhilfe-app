@@ -2,33 +2,52 @@ import React, { useState } from "react";
 import { Text, TextInput, TouchableOpacity, StyleSheet, Alert, ScrollView } from "react-native";
 import { NativeStackScreenProps } from "@react-navigation/native-stack";
 import { RootStackParamList } from "../../App";
-import { useAuth } from "./context/AuthContext";
+import { useAuth } from "./context/AuthContext"; // <-- bei dir ist das so
+import { upsertTeacher } from "./api/api";       // <-- bei dir ist das so
 
 type Props = NativeStackScreenProps<RootStackParamList, "TeacherProfileSetup">;
 
 export default function TeacherProfileSetupScreen({ navigation, route }: Props) {
-  const { updateTeacherProfile } = useAuth();
+  const { user } = useAuth();
   const { name, email } = route.params;
 
+  const authUid = String(user?.id ?? user?.uid ?? "");
   const [subjects, setSubjects] = useState("");
   const [hourlyRate, setHourlyRate] = useState("");
   const [city, setCity] = useState("");
   const [bio, setBio] = useState("");
 
-  const handleSave = () => {
+  const handleSave = async () => {
+    if (!authUid) {
+      Alert.alert("Fehler", "Kein authUid gefunden. Bitte neu einloggen.");
+      return;
+    }
+
     if (!subjects.trim() || !hourlyRate.trim() || !city.trim()) {
       Alert.alert("Fehlt noch was", "Bitte Fächer, Preis und Ort ausfüllen.");
       return;
     }
 
-    updateTeacherProfile({
-      subjects: subjects.split(",").map((s) => s.trim()).filter(Boolean),
-      hourlyRate: Number(hourlyRate),
-      city: city.trim(),
-      bio: bio.trim(),
-    });
+    try {
+      const subject = subjects
+        .split(",")
+        .map((s) => s.trim())
+        .filter(Boolean)
+        .join(", ");
 
-    navigation.replace("MainTabs");
+      await upsertTeacher({
+        authUid,
+        name,
+        subject,
+        city: city.trim(),
+        bio: bio.trim() || null,
+        pricePerHour: Number(hourlyRate),
+      });
+
+      navigation.replace("MainTabs");
+    } catch (e: any) {
+      Alert.alert("Fehler", String(e?.message || e));
+    }
   };
 
   return (
@@ -37,6 +56,7 @@ export default function TeacherProfileSetupScreen({ navigation, route }: Props) 
 
       <Text style={styles.small}>Name: {name}</Text>
       <Text style={styles.small}>E-Mail: {email}</Text>
+      <Text style={[styles.small, { marginTop: 6, opacity: 0.6 }]}>authUid: {authUid || "—"}</Text>
 
       <TextInput
         style={styles.input}
@@ -53,7 +73,12 @@ export default function TeacherProfileSetupScreen({ navigation, route }: Props) 
         keyboardType="numeric"
       />
 
-      <TextInput style={styles.input} placeholder="Ort / Stadt" value={city} onChangeText={setCity} />
+      <TextInput
+        style={styles.input}
+        placeholder="Ort / Stadt"
+        value={city}
+        onChangeText={setCity}
+      />
 
       <TextInput
         style={[styles.input, styles.textArea]}

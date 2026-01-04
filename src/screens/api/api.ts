@@ -1,10 +1,8 @@
-// src/screens/api/api.ts
-export const API_BASE_URL = "http://192.168.0.191:3000";
+export const API_BASE_URL = "http://192.168.0.253:3000";
 console.log("✅ api.ts loaded, API_BASE_URL =", API_BASE_URL);
 
 type Json = any;
 
-/** Fetch mit Timeout, damit "lädt ewig" nicht passiert */
 async function fetchWithTimeout(url: string, options: RequestInit = {}, timeoutMs = 12000) {
   const controller = new AbortController();
   const id = setTimeout(() => controller.abort(), timeoutMs);
@@ -17,7 +15,6 @@ async function fetchWithTimeout(url: string, options: RequestInit = {}, timeoutM
   }
 }
 
-/** Einheitliches Error-Handling */
 async function handle(res: Response, msg: string) {
   if (!res.ok) {
     const text = await res.text().catch(() => "");
@@ -44,13 +41,35 @@ export async function getTeachers() {
   return handle(res, "Failed to load teachers");
 }
 
+// ✅ teacher row by auth uid
+export async function getTeacherByAuth(uid: string) {
+  const res = await fetchWithTimeout(
+    `${API_BASE_URL}/api/teachers/by-auth?uid=${encodeURIComponent(String(uid))}`
+  );
+  return handle(res, "Failed to load teacher by auth uid");
+}
+
+// ✅ upsert teacher profile (creates or updates by auth_uid)
+export async function upsertTeacher(payload: {
+  authUid: string;
+  name: string;
+  subject?: string | null;
+  city?: string | null;
+  bio?: string | null;
+  pricePerHour?: number | null;
+}) {
+  const res = await fetchWithTimeout(`${API_BASE_URL}/api/teachers`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(payload),
+  });
+  return handle(res, "Failed to upsert teacher");
+}
+
+
 /* ---------------- Requests ---------------- */
 
-export async function getRequests(params?: {
-  teacherId?: string;
-  studentId?: string;
-  userId?: string; // optional, falls du später /api/requests?userId=... einbaust
-}) {
+export async function getRequests(params?: { teacherId?: string; studentId?: string; userId?: string }) {
   const qs = new URLSearchParams();
 
   const teacherId = params?.teacherId ? String(params.teacherId).trim() : "";
@@ -79,24 +98,17 @@ export async function createRequest(payload: Json) {
 }
 
 export async function patchRequest(id: string, payload: Json) {
-  const res = await fetchWithTimeout(
-    `${API_BASE_URL}/api/requests/${encodeURIComponent(String(id))}`,
-    {
-      method: "PATCH",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(payload),
-    }
-  );
+  const res = await fetchWithTimeout(`${API_BASE_URL}/api/requests/${encodeURIComponent(String(id))}`, {
+    method: "PATCH",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(payload),
+  });
   return handle(res, "Failed to patch request");
 }
 
 /* ---------------- Chats ---------------- */
 
-export async function createChat(payload: {
-  requestId: string;
-  studentId: string;
-  teacherId: string;
-}) {
+export async function createChat(payload: { requestId: string; studentId: string; teacherId: string }) {
   const res = await fetchWithTimeout(`${API_BASE_URL}/api/chats`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
