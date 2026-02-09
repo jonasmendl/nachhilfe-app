@@ -1,56 +1,80 @@
-export const API_BASE_URL = "http://192.168.0.253:3000";
-console.log("✅ api.ts loaded, API_BASE_URL =", API_BASE_URL);
+// src/screens/api/api.ts
 
 type Json = any;
 
-async function fetchWithTimeout(url: string, options: RequestInit = {}, timeoutMs = 12000) {
-  const controller = new AbortController();
-  const id = setTimeout(() => controller.abort(), timeoutMs);
+const API_BASE_URL = (process.env.EXPO_PUBLIC_API_URL || "").replace(/\/$/, "");
+console.log("✅ api.ts loaded, API_BASE_URL =", API_BASE_URL);
 
-  try {
-    const res = await fetch(url, { ...options, signal: controller.signal });
-    return res;
-  } finally {
-    clearTimeout(id);
+function assertApiBaseUrl() {
+  if (!API_BASE_URL) {
+    throw new Error(
+      "EXPO_PUBLIC_API_URL ist nicht gesetzt. Prüfe .env und starte Expo neu: npx expo start -c"
+    );
   }
 }
 
-async function handle(res: Response, msg: string) {
-  if (!res.ok) {
+function isAbortError(e: any) {
+  const msg = String(e?.message || e);
+  return msg.includes("AbortError") || msg.toLowerCase().includes("aborted");
+}
+
+async function request(path: string, options: RequestInit = {}) {
+  assertApiBaseUrl();
+
+  const url = `${API_BASE_URL}${path}`;
+
+  const headers: Record<string, string> = {
+    // ngrok Warnseite überspringen
+    "ngrok-skip-browser-warning": "true",
+    ...(options.headers as any),
+  };
+
+  try {
+    const res = await fetch(url, { ...options, headers });
+
     const text = await res.text().catch(() => "");
-    throw new Error(`${msg} (${res.status}) ${text}`);
+    console.log("➡️ API", options.method || "GET", path, "STATUS", res.status);
+
+    if (!res.ok) {
+      console.log("❌ API ERROR BODY:", text);
+      throw new Error(`${res.status} ${text || "Request failed"}`);
+    }
+
+    if (!text) return null;
+
+    try {
+      return JSON.parse(text);
+    } catch {
+      return text as any;
+    }
+  } catch (e: any) {
+    // Abort nicht als großer Fehler behandeln (passiert z.B. bei Navigation/Reload)
+    if (isAbortError(e)) {
+      console.log("⚠️ API aborted:", options.method || "GET", path);
+      throw e; // caller entscheidet, ob ignorieren
+    }
+    console.log("❌ API network/error:", options.method || "GET", path, e);
+    throw e;
   }
-
-  const ct = res.headers.get("content-type") || "";
-  if (!ct.includes("application/json")) return null as any;
-
-  return res.json();
 }
 
 /* ---------------- Health ---------------- */
 
-export async function getHealth() {
-  const res = await fetchWithTimeout(`${API_BASE_URL}/api/health`);
-  return handle(res, "Health check failed");
+export function getHealth() {
+  return request("/api/health");
 }
 
 /* ---------------- Teachers ---------------- */
 
-export async function getTeachers() {
-  const res = await fetchWithTimeout(`${API_BASE_URL}/api/teachers`);
-  return handle(res, "Failed to load teachers");
+export function getTeachers() {
+  return request("/api/teachers");
 }
 
-// ✅ teacher row by auth uid
-export async function getTeacherByAuth(uid: string) {
-  const res = await fetchWithTimeout(
-    `${API_BASE_URL}/api/teachers/by-auth?uid=${encodeURIComponent(String(uid))}`
-  );
-  return handle(res, "Failed to load teacher by auth uid");
+export function getTeacherByAuth(uid: string) {
+  return request(`/api/teachers/by-auth?uid=${encodeURIComponent(String(uid))}`);
 }
 
-// ✅ upsert teacher profile (creates or updates by auth_uid)
-export async function upsertTeacher(payload: {
+export function upsertTeacher(payload: {
   authUid: string;
   name: string;
   subject?: string | null;
@@ -58,86 +82,63 @@ export async function upsertTeacher(payload: {
   bio?: string | null;
   pricePerHour?: number | null;
 }) {
-  const res = await fetchWithTimeout(`${API_BASE_URL}/api/teachers`, {
+  return request("/api/teachers", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(payload),
   });
-  return handle(res, "Failed to upsert teacher");
 }
-
 
 /* ---------------- Requests ---------------- */
 
-export async function getRequests(params?: { teacherId?: string; studentId?: string; userId?: string }) {
+export function getRequests(params?: { teacherId?: string; studentId?: string }) {
   const qs = new URLSearchParams();
-
-  const teacherId = params?.teacherId ? String(params.teacherId).trim() : "";
-  const studentId = params?.studentId ? String(params.studentId).trim() : "";
-  const userId = params?.userId ? String(params.userId).trim() : "";
-
-  if (teacherId) qs.set("teacherId", teacherId);
-  if (studentId) qs.set("studentId", studentId);
-  if (userId) qs.set("userId", userId);
-
-  const url = qs.toString()
-    ? `${API_BASE_URL}/api/requests?${qs.toString()}`
-    : `${API_BASE_URL}/api/requests`;
-
-  const res = await fetchWithTimeout(url);
-  return handle(res, "Failed to load requests");
+  if (params?.teacherId) qs.set("teacherId", String(params.teacherId));
+  if (params?.studentId) qs.set("studentId", String(params.studentId));
+  const suffix = qs.toString() ? `?${qs.toString()}` : "";
+  return request(`/api/requests${suffix}`);
 }
 
-export async function createRequest(payload: Json) {
-  const res = await fetchWithTimeout(`${API_BASE_URL}/api/requests`, {
+export function createRequest(payload: Json) {
+  return request("/api/requests", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(payload),
   });
-  return handle(res, "Failed to create request");
 }
 
-export async function patchRequest(id: string, payload: Json) {
-  const res = await fetchWithTimeout(`${API_BASE_URL}/api/requests/${encodeURIComponent(String(id))}`, {
+export function patchRequest(id: string, payload: Json) {
+  return request(`/api/requests/${encodeURIComponent(String(id))}`, {
     method: "PATCH",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(payload),
   });
-  return handle(res, "Failed to patch request");
 }
 
 /* ---------------- Chats ---------------- */
 
-export async function createChat(payload: { requestId: string; studentId: string; teacherId: string }) {
-  const res = await fetchWithTimeout(`${API_BASE_URL}/api/chats`, {
+export function createChat(payload: { requestId: string; studentId: string; teacherId: string }) {
+  return request("/api/chats", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(payload),
   });
-  return handle(res, "Failed to create chat");
 }
 
-export async function getChats(userId: string) {
-  const res = await fetchWithTimeout(
-    `${API_BASE_URL}/api/chats?userId=${encodeURIComponent(String(userId).trim())}`
-  );
-  return handle(res, "Failed to load chats");
+export function getChats(userId: string) {
+  return request(`/api/chats?userId=${encodeURIComponent(String(userId))}`);
 }
 
 /* ---------------- Messages ---------------- */
 
-export async function getMessages(chatId: string) {
-  const res = await fetchWithTimeout(
-    `${API_BASE_URL}/api/messages?chatId=${encodeURIComponent(String(chatId).trim())}`
-  );
-  return handle(res, "Failed to load messages");
+export function getMessages(chatId: string) {
+  return request(`/api/messages?chatId=${encodeURIComponent(String(chatId))}`);
 }
 
-export async function sendMessage(payload: { chatId: string; senderId: string; text: string }) {
-  const res = await fetchWithTimeout(`${API_BASE_URL}/api/messages`, {
+export function sendMessage(payload: { chatId: string; senderId: string; text: string }) {
+  return request("/api/messages", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(payload),
   });
-  return handle(res, "Failed to send message");
 }

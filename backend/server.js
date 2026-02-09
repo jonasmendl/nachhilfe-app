@@ -349,7 +349,7 @@ const server = http.createServer(async (req, res) => {
         })
         .select()
         .single();
-
+        
       if (error) return sendJson(res, 500, { ok: false, error: error.message });
       return sendJson(res, 201, data);
     } catch (e) {

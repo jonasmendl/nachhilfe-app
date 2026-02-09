@@ -32,7 +32,7 @@ export type Chat = {
   studentId: string;
   teacherId: string;
   createdAt?: string;
-  title?: string; // optional
+  title?: string;
 };
 
 export type Message = {
@@ -74,6 +74,13 @@ type AppData = {
 };
 
 const Ctx = createContext<AppData | null>(null);
+
+/* ---------------- Helpers ---------------- */
+
+function isAbortError(e: any) {
+  const msg = String(e?.message || e);
+  return msg.includes("AbortError") || msg.toLowerCase().includes("aborted");
+}
 
 /* ---------------- Normalizer (snake_case -> camelCase) ---------------- */
 
@@ -149,13 +156,23 @@ export function AppDataProvider({ children }: { children: React.ReactNode }) {
     return normalized;
   };
 
-  const reloadAll = async () => {
-    await reloadRequests();
-    await reloadChatsForMe();
+  const reloadAll: AppData["reloadAll"] = async () => {
+    if (!myId) {
+      setRequests([]);
+      setChats([]);
+      setMessages([]);
+      return;
+    }
+
+    // parallel = schneller und weniger "hängen"
+    await Promise.all([reloadRequests(), reloadChatsForMe()]);
   };
 
   useEffect(() => {
-    reloadAll().catch((e) => console.error("❌ reloadAll failed:", e));
+    reloadAll().catch((e) => {
+      if (isAbortError(e)) return;
+      console.error("❌ reloadAll failed:", e);
+    });
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [myId]);
 
@@ -176,10 +193,8 @@ export function AppDataProvider({ children }: { children: React.ReactNode }) {
   };
 
   const acceptRequest: AppData["acceptRequest"] = async (request) => {
-    // 1) request status accepted
     await apiPatchRequest(request.id, { status: "accepted" });
 
-    // 2) chat erstellen/holen (Backend erstellt wenn nicht existiert)
     const chatRaw = await apiCreateChat({
       requestId: request.id,
       studentId: request.studentId,
@@ -188,17 +203,13 @@ export function AppDataProvider({ children }: { children: React.ReactNode }) {
 
     const chat = normChat(chatRaw);
 
-    // 3) refresh
-    await reloadRequests();
-    await reloadChatsForMe();
-
+    await reloadAll();
     return chat;
   };
 
   const rejectRequest: AppData["rejectRequest"] = async (request) => {
     await apiPatchRequest(request.id, { status: "rejected" });
 
-    // lokal updaten + refresh optional
     setRequests((prev) =>
       prev.map((r) => (r.id === request.id ? { ...r, status: "rejected" } : r))
     );
@@ -215,7 +226,6 @@ export function AppDataProvider({ children }: { children: React.ReactNode }) {
     const t = text.trim();
     if (!t) throw new Error("Empty message");
 
-    // api.ts erwartet payload { chatId, senderId, text }
     const raw = await apiSendMessage({ chatId, senderId, text: t });
     const msg = normMessage(raw);
 
