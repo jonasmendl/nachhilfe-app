@@ -14,29 +14,33 @@ export default function SignUpScreen({ navigation, route }: Props) {
   const [email, setEmail] = useState("");
 
   const handleSignUp = () => {
-    if (!name.trim() || !email.trim()) {
-      Alert.alert("Error", "Bitte Name und E-Mail eingeben");
+    const n = name.trim();
+    const e = email.trim();
+
+    if (!n || !e) {
+      Alert.alert("Fehler", "Bitte Name und E-Mail eingeben");
       return;
     }
 
+    // ✅ User setzen
     setUser({
       id: role === "Teacher" ? "t1" : "s1",
-      name: name.trim(),
-      email: email.trim(),
+      name: n,
+      email: e,
       role,
     });
-    
 
+    // ✅ Teacher: direkt Setup Screen (Auth-Flow)
     if (role === "Teacher") {
-      navigation.replace("TeacherProfileSetup", {
-        name: name.trim(),
-        email: email.trim(),
+      navigation.navigate("TeacherProfileSetup", {
+        name: n,
+        email: e,
         role: "Teacher",
       });
       return;
     }
 
-    navigation.replace("MainTabs");
+    // ✅ Student: keine Navigation nötig (Root switched automatisch)
   };
 
   return (
@@ -66,7 +70,14 @@ const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: "#fff", padding: 20, justifyContent: "center" },
   title: { fontSize: 28, fontWeight: "bold", marginBottom: 10, textAlign: "center" },
   roleText: { textAlign: "center", marginBottom: 20, color: "#555" },
-  input: { borderWidth: 1, borderColor: "#aaa", borderRadius: 8, padding: 12, marginBottom: 16, fontSize: 16 },
+  input: {
+    borderWidth: 1,
+    borderColor: "#aaa",
+    borderRadius: 8,
+    padding: 12,
+    marginBottom: 16,
+    fontSize: 16,
+  },
   button: { backgroundColor: "#007AFF", padding: 15, borderRadius: 8, alignItems: "center", marginTop: 10 },
   buttonText: { color: "#fff", fontSize: 18, fontWeight: "bold" },
 });

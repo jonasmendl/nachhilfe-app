@@ -12,7 +12,7 @@ import {
 } from "react-native";
 import { useAuth } from "../context/AuthContext";
 import { useAppData } from "../context/AppDataContext";
-import { API_BASE_URL } from "../api/api"; // ✅ EINZIGE Quelle für die API-URL
+import { getTeachers } from "../api/api";
 
 type Teacher = {
   id: string;
@@ -25,10 +25,9 @@ type Teacher = {
 
 const { width } = Dimensions.get("window");
 const SWIPE_THRESHOLD = 0.25 * width;
-const SWIPE_OUT_DURATION = 200;
+const SWIPE_OUT_DURATION = 220;
 
 export default function StudentSwipeScreen() {
-  // ---- Hooks immer oben, immer gleich! ----
   const { user } = useAuth();
   const { createRequest, requests } = useAppData();
 
@@ -37,16 +36,16 @@ export default function StudentSwipeScreen() {
   const [error, setError] = useState<string | null>(null);
 
   const [index, setIndex] = useState(0);
-  const position = useRef(new Animated.ValueXY()).current;
+  const position = useRef(new Animated.ValueXY({ x: 0, y: 0 })).current;
 
-  const studentId = (user?.id ?? user?.uid ?? "s1") as string;
-  const studentName = (user?.name ?? user?.displayName ?? "Schüler") as string;
+  const studentId = String(user?.id ?? user?.uid ?? "s1");
+  const studentName = String(user?.name ?? user?.displayName ?? "Schüler");
 
   const currentTeacher = teachers[index] ?? null;
 
   const rotate = position.x.interpolate({
-    inputRange: [-width * 1.5, 0, width * 1.5],
-    outputRange: ["-18deg", "0deg", "18deg"],
+    inputRange: [-width * 1.2, 0, width * 1.2],
+    outputRange: ["-14deg", "0deg", "14deg"],
   });
 
   const cardStyle = useMemo(
@@ -65,7 +64,9 @@ export default function StudentSwipeScreen() {
   const resetPosition = () => {
     Animated.spring(position, {
       toValue: { x: 0, y: 0 },
-      useNativeDriver: false,
+      useNativeDriver: true,
+      friction: 7,
+      tension: 70,
     }).start();
   };
 
@@ -86,16 +87,14 @@ export default function StudentSwipeScreen() {
       return;
     }
 
-    const city = t.city ?? "—";
-
     try {
       await createRequest({
         studentId,
         studentName,
-        teacherId: t.id,
-        teacherName: t.name,
-        subject: t.subject ?? "—",
-        city,
+        teacherId: String(t.id),
+        teacherName: String(t.name),
+        subject: String(t.subject ?? "—"),
+        city: String(t.city ?? "Berlin"),
         when: "so bald wie möglich",
       });
 
@@ -108,14 +107,13 @@ export default function StudentSwipeScreen() {
   const swipeOut = (direction: "left" | "right") => {
     if (!currentTeacher) return;
 
-    const x = direction === "right" ? width + 100 : -width - 100;
+    const x = direction === "right" ? width + 120 : -width - 120;
 
     Animated.timing(position, {
       toValue: { x, y: 0 },
       duration: SWIPE_OUT_DURATION,
-      useNativeDriver: false,
+      useNativeDriver: true,
     }).start(() => {
-      // ✅ Animation nie blockieren: Request async “fire-and-forget”
       if (direction === "right") {
         void likeTeacher(currentTeacher);
       }
@@ -127,19 +125,38 @@ export default function StudentSwipeScreen() {
   const panResponder = useRef(
     PanResponder.create({
       onMoveShouldSetPanResponder: (_evt, gesture) =>
-        Math.abs(gesture.dx) > 5 || Math.abs(gesture.dy) > 5,
-      onPanResponderMove: (_evt, gesture) => {
-        position.setValue({ x: gesture.dx, y: gesture.dy });
+        Math.abs(gesture.dx) > 6 || Math.abs(gesture.dy) > 6,
+
+      onPanResponderGrant: () => {
+        // ✅ verhindert “halb kleben”
+        position.setOffset({
+          // @ts-ignore
+          x: position.x.__getValue(),
+          // @ts-ignore
+          y: position.y.__getValue(),
+        });
+        position.setValue({ x: 0, y: 0 });
       },
+
+      onPanResponderMove: Animated.event([null, { dx: position.x, dy: position.y }], {
+        useNativeDriver: false,
+      }),
+
       onPanResponderRelease: (_evt, gesture) => {
+        position.flattenOffset();
+
         if (gesture.dx > SWIPE_THRESHOLD) swipeOut("right");
         else if (gesture.dx < -SWIPE_THRESHOLD) swipeOut("left");
         else resetPosition();
       },
+
+      onPanResponderTerminate: () => {
+        position.flattenOffset();
+        resetPosition();
+      },
     })
   ).current;
 
-  // ---- Load teachers ----
   useEffect(() => {
     let cancelled = false;
 
@@ -148,15 +165,12 @@ export default function StudentSwipeScreen() {
         setLoading(true);
         setError(null);
 
-        const res = await fetch(`${API_BASE_URL}/api/teachers`);
-        const data = await res.json();
+        const data = await getTeachers();
+        if (cancelled) return;
 
-        if (!res.ok) throw new Error(data?.message || data?.error || "Failed to load teachers");
-
-        if (!cancelled) {
-          setTeachers(Array.isArray(data) ? data : []);
-          setIndex(0);
-        }
+        setTeachers(Array.isArray(data) ? (data as Teacher[]) : []);
+        setIndex(0);
+        position.setValue({ x: 0, y: 0 });
       } catch (e: any) {
         if (!cancelled) setError(String(e?.message || e));
       } finally {
@@ -170,15 +184,13 @@ export default function StudentSwipeScreen() {
     };
   }, []);
 
-  // ---- UI ----
   if (loading) {
     return (
       <View style={styles.container}>
         <Text style={styles.header}>Swipen</Text>
-        <View style={{ flex: 1, justifyContent: "center", alignItems: "center" }}>
+        <View style={styles.center}>
           <ActivityIndicator />
-          <Text style={{ marginTop: 12, opacity: 0.6 }}>Lade Teachers…</Text>
-          <Text style={{ marginTop: 6, opacity: 0.4, fontSize: 12 }}>{API_BASE_URL}</Text>
+          <Text style={styles.muted}>Lade Lehrer…</Text>
         </View>
       </View>
     );
@@ -188,9 +200,10 @@ export default function StudentSwipeScreen() {
     return (
       <View style={styles.container}>
         <Text style={styles.header}>Swipen</Text>
-        <Text style={styles.title}>Fehler beim Laden 😅</Text>
-        <Text style={styles.sub}>{error}</Text>
-        <Text style={[styles.sub, { marginTop: 12 }]}>Aktuelle API: {API_BASE_URL}</Text>
+        <View style={styles.center}>
+          <Text style={styles.title}>Konnte Lehrer nicht laden</Text>
+          <Text style={styles.muted}>{error}</Text>
+        </View>
       </View>
     );
   }
@@ -199,8 +212,10 @@ export default function StudentSwipeScreen() {
     return (
       <View style={styles.container}>
         <Text style={styles.header}>Swipen</Text>
-        <Text style={styles.title}>Keine Lehrer mehr 😅</Text>
-        <Text style={styles.sub}>Füge neue Teachers hinzu oder komm später wieder.</Text>
+        <View style={styles.center}>
+          <Text style={styles.title}>Keine Lehrer mehr</Text>
+          <Text style={styles.muted}>Komm später wieder.</Text>
+        </View>
       </View>
     );
   }
@@ -211,20 +226,20 @@ export default function StudentSwipeScreen() {
 
       <View style={styles.cardArea}>
         <Animated.View style={[styles.card, cardStyle]} {...panResponder.panHandlers}>
-          <Text style={styles.name}>{currentTeacher.name}</Text>
+          <Text style={styles.name}>{String(currentTeacher.name)}</Text>
           <Text style={styles.meta}>{metaLine}</Text>
 
-          {!!currentTeacher.bio && <Text style={styles.bio}>{currentTeacher.bio}</Text>}
+          {!!currentTeacher.bio && <Text style={styles.bio}>{String(currentTeacher.bio)}</Text>}
 
           {currentTeacher.pricePerHour != null && (
-            <Text style={styles.meta}>{currentTeacher.pricePerHour}€/h</Text>
+            <Text style={styles.meta}>{Number(currentTeacher.pricePerHour)}€/h</Text>
           )}
 
-          {alreadyRequested(currentTeacher.id) && (
-            <Text style={styles.badge}>Anfrage läuft schon</Text>
+          {alreadyRequested(String(currentTeacher.id)) && (
+            <Text style={styles.badge}>Anfrage läuft</Text>
           )}
 
-          <Text style={styles.hint}>Zieh nach links/rechts</Text>
+          <Text style={styles.hint}>Wische links/rechts</Text>
         </Animated.View>
       </View>
 
@@ -245,6 +260,10 @@ const styles = StyleSheet.create({
   container: { flex: 1, padding: 16, backgroundColor: "#fff" },
   header: { fontSize: 22, fontWeight: "800", marginBottom: 12 },
 
+  center: { flex: 1, alignItems: "center", justifyContent: "center" },
+  muted: { marginTop: 12, opacity: 0.6, textAlign: "center" },
+  title: { fontSize: 18, fontWeight: "900", textAlign: "center" },
+
   cardArea: { flex: 1, alignItems: "center", justifyContent: "center" },
   card: {
     width: "95%",
@@ -254,6 +273,7 @@ const styles = StyleSheet.create({
     padding: 18,
     minHeight: 240,
     justifyContent: "center",
+    backgroundColor: "#fff",
   },
 
   name: { fontSize: 24, fontWeight: "900", marginBottom: 6 },
@@ -276,7 +296,4 @@ const styles = StyleSheet.create({
   nope: { backgroundColor: "#eee" },
   like: { backgroundColor: "#c8f7c5" },
   btnText: { fontSize: 18, fontWeight: "700" },
-
-  title: { fontSize: 22, fontWeight: "900", marginBottom: 8 },
-  sub: { opacity: 0.6, textAlign: "center" },
 });

@@ -1,14 +1,9 @@
-import React, { createContext, useContext, useEffect, useMemo, useState } from "react";
-import { useAuth } from "./AuthContext";
-
+import React, { createContext, useContext, useMemo, useState } from "react";
 import {
-  getRequests as apiGetRequests,
-  createRequest as apiCreateRequest,
-  patchRequest as apiPatchRequest,
-  createChat as apiCreateChat,
   getChats as apiGetChats,
   getMessages as apiGetMessages,
   sendMessage as apiSendMessage,
+  createRequest as apiCreateRequest,
 } from "../api/api";
 
 export type RequestStatus = "pending" | "accepted" | "rejected";
@@ -16,23 +11,24 @@ export type RequestStatus = "pending" | "accepted" | "rejected";
 export type Request = {
   id: string;
   studentId: string;
-  studentName?: string;
+  studentName: string;
   teacherId: string;
-  teacherName?: string;
-  subject?: string;
-  city?: string;
-  when?: string;
+  teacherName: string;
+  subject: string;
+  city: string;
+  when: string;
   status: RequestStatus;
-  createdAt?: string;
+  createdAt: number;
 };
 
 export type Chat = {
   id: string;
-  requestId: string;
   studentId: string;
+  studentName: string;
   teacherId: string;
-  createdAt?: string;
-  title?: string;
+  teacherName: string;
+  lastMessage?: string;
+  updatedAt: number;
 };
 
 export type Message = {
@@ -40,239 +36,328 @@ export type Message = {
   chatId: string;
   senderId: string;
   text: string;
-  createdAt?: string;
+  createdAt: number;
 };
 
-type CreateRequestArgs = {
+type CreateRequestInput = {
   studentId: string;
-  studentName?: string;
+  studentName: string;
   teacherId: string;
-  teacherName?: string;
-  subject?: string;
-  city?: string;
-  when?: string;
+  teacherName: string;
+  subject: string;
+  city: string;
+  when: string;
 };
 
-type AppData = {
+type SendMessageInput = {
+  chatId: string;
+  senderId: string;
+  text: string;
+};
+
+type AppDataContextValue = {
   requests: Request[];
   chats: Chat[];
-  messages: Message[];
+  messagesByChatId: Record<string, Message[]>;
 
-  reloadAll: () => Promise<void>;
-  reloadRequestsForTeacher: (teacherId: string) => Promise<Request[]>;
-  reloadChatsForMe: () => Promise<Chat[]>;
+  createRequest: (input: CreateRequestInput) => Promise<Request>;
 
-  createRequest: (args: CreateRequestArgs) => Promise<Request>;
-  acceptRequest: (request: Request) => Promise<Chat>;
-  rejectRequest: (request: Request) => Promise<void>;
+  // ✅ accepts: requestId (string) ODER request object (any)
+  acceptRequest: (requestOrId: any) => Promise<{ chatId: string }>;
+  rejectRequest: (requestOrId: any) => Promise<void>;
 
-  loadMessages: (chatId: string) => Promise<Message[]>;
-  sendMessage: (chatId: string, senderId: string, text: string) => Promise<Message>;
-  messagesForChat: (chatId: string) => Message[];
-
-  resetAllLocal: () => void;
+  refreshChatsForUser: (userId: string) => Promise<void>;
+  refreshMessages: (chatId: string) => Promise<void>;
+  sendMessage: (input: SendMessageInput) => Promise<void>;
 };
 
-const Ctx = createContext<AppData | null>(null);
+const AppDataContext = createContext<AppDataContextValue | undefined>(undefined);
 
-/* ---------------- Helpers ---------------- */
-
-function isAbortError(e: any) {
-  const msg = String(e?.message || e);
-  return msg.includes("AbortError") || msg.toLowerCase().includes("aborted");
+function uid(prefix: string) {
+  return `${prefix}_${Math.random().toString(16).slice(2)}_${Date.now()}`;
 }
 
-/* ---------------- Normalizer (snake_case -> camelCase) ---------------- */
+function makeChatId(studentId: string, teacherId: string) {
+  return `c_${studentId}_${teacherId}`;
+}
 
-function normRequest(r: any): Request {
+function normalizeIncomingRequest(input: any): Request {
+  // supports snake_case from api + camelCase from app + demo
+  const id = String(input?.id ?? uid("r"));
+  const studentId = String(input?.studentId ?? input?.student_id ?? "s1");
+  const teacherId = String(input?.teacherId ?? input?.teacher_id ?? "t1");
+  const studentName = String(input?.studentName ?? input?.student_name ?? "Lena Fischer");
+  const teacherName = String(input?.teacherName ?? input?.teacher_name ?? "Herr Bauer");
+  const subject = String(input?.subject ?? "Mathe");
+  const city = String(input?.city ?? "Berlin");
+  const when = String(input?.when ?? "Heute 16:30");
+  const status = (String(input?.status ?? "pending") as RequestStatus) || "pending";
+  const createdAt = Number(input?.createdAt ?? input?.created_at ?? Date.now());
+
   return {
-    id: String(r.id),
-    studentId: String(r.studentId ?? r.student_id ?? ""),
-    studentName: r.studentName ?? r.student_name ?? undefined,
-    teacherId: String(r.teacherId ?? r.teacher_id ?? ""),
-    teacherName: r.teacherName ?? r.teacher_name ?? undefined,
-    subject: r.subject ?? undefined,
-    city: r.city ?? undefined,
-    when: r.when ?? undefined,
-    status: (r.status ?? "pending") as RequestStatus,
-    createdAt: r.createdAt ?? r.created_at ?? undefined,
+    id,
+    studentId,
+    studentName,
+    teacherId,
+    teacherName,
+    subject,
+    city,
+    when,
+    status,
+    createdAt,
   };
 }
-
-function normChat(c: any): Chat {
-  return {
-    id: String(c.id),
-    requestId: String(c.requestId ?? c.request_id ?? ""),
-    studentId: String(c.studentId ?? c.student_id ?? ""),
-    teacherId: String(c.teacherId ?? c.teacher_id ?? ""),
-    createdAt: c.createdAt ?? c.created_at ?? undefined,
-    title: c.title ?? undefined,
-  };
-}
-
-function normMessage(m: any): Message {
-  return {
-    id: String(m.id),
-    chatId: String(m.chatId ?? m.chat_id ?? ""),
-    senderId: String(m.senderId ?? m.sender_id ?? ""),
-    text: String(m.text ?? ""),
-    createdAt: m.createdAt ?? m.created_at ?? undefined,
-  };
-}
-
-/* ---------------- Provider ---------------- */
 
 export function AppDataProvider({ children }: { children: React.ReactNode }) {
-  const { user } = useAuth();
+  // ✅ Demo seed: pending request (realistic name)
+  const [requests, setRequests] = useState<Request[]>(() => {
+    const now = Date.now();
+    return [
+      {
+        id: "r_demo_1",
+        studentId: "s1",
+        studentName: "Lena Fischer",
+        teacherId: "t1",
+        teacherName: "Herr Bauer",
+        subject: "Mathe",
+        city: "Berlin",
+        when: "Heute 16:30",
+        status: "pending",
+        createdAt: now - 1000 * 60 * 10,
+      },
+    ];
+  });
 
-  const [requests, setRequests] = useState<Request[]>([]);
   const [chats, setChats] = useState<Chat[]>([]);
-  const [messages, setMessages] = useState<Message[]>([]);
+  const [messagesByChatId, setMessagesByChatId] = useState<Record<string, Message[]>>({});
 
-  const myId = String(user?.id ?? user?.uid ?? "");
+  const createRequest = async (input: CreateRequestInput) => {
+    // optional: hit fake api
+    try {
+      await apiCreateRequest(input as any);
+    } catch {}
 
-  const reloadRequests = async () => {
-    const raw = await apiGetRequests();
-    const normalized = (Array.isArray(raw) ? raw : []).map(normRequest);
-    setRequests(normalized);
-    return normalized;
+    const req: Request = {
+      id: uid("r"),
+      studentId: String(input.studentId),
+      studentName: String(input.studentName),
+      teacherId: String(input.teacherId),
+      teacherName: String(input.teacherName),
+      subject: String(input.subject),
+      city: String(input.city),
+      when: String(input.when),
+      status: "pending",
+      createdAt: Date.now(),
+    };
+
+    setRequests((prev) => [req, ...prev]);
+    return req;
   };
 
-  const reloadRequestsForTeacher: AppData["reloadRequestsForTeacher"] = async (teacherId) => {
-    const raw = await apiGetRequests({ teacherId });
-    const normalized = (Array.isArray(raw) ? raw : []).map(normRequest);
-    setRequests(normalized);
-    return normalized;
+  const ensureChatExists = (req: Request) => {
+    const chatId = makeChatId(req.studentId, req.teacherId);
+
+    setChats((prev) => {
+      const exists = prev.some((c) => c.id === chatId);
+      if (exists) {
+        return prev
+          .map((c) => (c.id === chatId ? { ...c, updatedAt: Date.now() } : c))
+          .sort((a, b) => b.updatedAt - a.updatedAt);
+      }
+
+      const chat: Chat = {
+        id: chatId,
+        studentId: req.studentId,
+        studentName: req.studentName,
+        teacherId: req.teacherId,
+        teacherName: req.teacherName,
+        lastMessage: "Chat gestartet ✅",
+        updatedAt: Date.now(),
+      };
+
+      return [chat, ...prev];
+    });
+
+    setMessagesByChatId((prev) => {
+      if (prev[chatId]?.length) return prev;
+      return {
+        ...prev,
+        [chatId]: [
+          {
+            id: uid("m"),
+            chatId,
+            senderId: req.teacherId,
+            text: `Hi ${req.studentName}! Ich habe deine Anfrage gesehen 🙂 Worum geht’s genau?`,
+            createdAt: Date.now(),
+          },
+        ],
+      };
+    });
+
+    return chatId;
   };
 
-  const reloadChatsForMe: AppData["reloadChatsForMe"] = async () => {
-    if (!myId) {
-      setChats([]);
-      return [];
+  const acceptRequest = async (requestOrId: any) => {
+    // ✅ supports acceptRequest("id") OR acceptRequest(requestObj)
+    let req: Request | null = null;
+
+    if (typeof requestOrId === "string") {
+      const id = requestOrId;
+      const found = requests.find((r) => String(r.id) === String(id)) ?? null;
+      if (found) req = found;
+
+      // mark accepted if exists
+      if (found) {
+        setRequests((prev) =>
+          prev.map((r) => (String(r.id) === String(id) ? { ...r, status: "accepted" } : r))
+        );
+      }
+    } else {
+      // normalize request object from screen/api
+      req = normalizeIncomingRequest(requestOrId);
+
+      // ensure it's in state (so UI stays consistent)
+      setRequests((prev) => {
+        const exists = prev.some((r) => String(r.id) === String(req!.id));
+        const acceptedReq = { ...req!, status: "accepted" as const };
+
+        if (!exists) return [acceptedReq, ...prev];
+        return prev.map((r) => (String(r.id) === String(req!.id) ? acceptedReq : r));
+      });
     }
-    const raw = await apiGetChats(myId);
-    const normalized = (Array.isArray(raw) ? raw : []).map(normChat);
-    setChats(normalized);
-    return normalized;
+
+    // if still null (id not found), create a safe demo req
+    if (!req) {
+      req = {
+        id: String(requestOrId ?? uid("r")),
+        studentId: "s1",
+        studentName: "Lena Fischer",
+        teacherId: "t1",
+        teacherName: "Herr Bauer",
+        subject: "Mathe",
+        city: "Berlin",
+        when: "Heute 16:30",
+        status: "accepted",
+        createdAt: Date.now(),
+      };
+
+      setRequests((prev) => [{ ...req!, status: "accepted" }, ...prev]);
+    }
+
+    const chatId = ensureChatExists({ ...req, status: "accepted" });
+    return { chatId };
   };
 
-  const reloadAll: AppData["reloadAll"] = async () => {
-    if (!myId) {
-      setRequests([]);
-      setChats([]);
-      setMessages([]);
+  const rejectRequest = async (requestOrId: any) => {
+    if (typeof requestOrId === "string") {
+      const id = requestOrId;
+      setRequests((prev) =>
+        prev.map((r) => (String(r.id) === String(id) ? { ...r, status: "rejected" } : r))
+      );
       return;
     }
 
-    // parallel = schneller und weniger "hängen"
-    await Promise.all([reloadRequests(), reloadChatsForMe()]);
-  };
-
-  useEffect(() => {
-    reloadAll().catch((e) => {
-      if (isAbortError(e)) return;
-      console.error("❌ reloadAll failed:", e);
+    const req = normalizeIncomingRequest(requestOrId);
+    setRequests((prev) => {
+      const exists = prev.some((r) => String(r.id) === String(req.id));
+      const rejectedReq = { ...req, status: "rejected" as const };
+      if (!exists) return [rejectedReq, ...prev];
+      return prev.map((r) => (String(r.id) === String(req.id) ? rejectedReq : r));
     });
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [myId]);
-
-  const createRequest: AppData["createRequest"] = async (args) => {
-    const createdRaw = await apiCreateRequest({
-      studentId: args.studentId,
-      studentName: args.studentName,
-      teacherId: args.teacherId,
-      teacherName: args.teacherName,
-      subject: args.subject,
-      city: args.city,
-      when: args.when,
-    });
-
-    const created = normRequest(createdRaw);
-    setRequests((prev) => [created, ...prev]);
-    return created;
   };
 
-  const acceptRequest: AppData["acceptRequest"] = async (request) => {
-    await apiPatchRequest(request.id, { status: "accepted" });
+  const refreshChatsForUser = async (userId: string) => {
+    try {
+      const apiChats = await apiGetChats(String(userId));
+      if (!Array.isArray(apiChats)) return;
 
-    const chatRaw = await apiCreateChat({
-      requestId: request.id,
-      studentId: request.studentId,
-      teacherId: request.teacherId,
-    });
+      setChats((prev) => {
+        const byId = new Map<string, Chat>();
+        for (const c of prev) byId.set(c.id, c);
 
-    const chat = normChat(chatRaw);
+        for (const c of apiChats as any[]) {
+          const normalized: Chat = {
+            id: String(c.id),
+            studentId: String(c.studentId ?? c.student_id ?? "s1"),
+            studentName: String(c.studentName ?? c.student_name ?? "Schüler"),
+            teacherId: String(c.teacherId ?? c.teacher_id ?? "t1"),
+            teacherName: String(c.teacherName ?? c.teacher_name ?? "Lehrer"),
+            lastMessage: c.lastMessage ?? c.last_message ?? undefined,
+            updatedAt: Number(c.updatedAt ?? c.updated_at ?? Date.now()),
+          };
+          byId.set(normalized.id, normalized);
+        }
 
-    await reloadAll();
-    return chat;
-  };
-
-  const rejectRequest: AppData["rejectRequest"] = async (request) => {
-    await apiPatchRequest(request.id, { status: "rejected" });
-
-    setRequests((prev) =>
-      prev.map((r) => (r.id === request.id ? { ...r, status: "rejected" } : r))
-    );
-  };
-
-  const loadMessages: AppData["loadMessages"] = async (chatId) => {
-    const raw = await apiGetMessages(chatId);
-    const normalized = (Array.isArray(raw) ? raw : []).map(normMessage);
-    setMessages(normalized);
-    return normalized;
-  };
-
-  const sendMessage: AppData["sendMessage"] = async (chatId, senderId, text) => {
-    const t = text.trim();
-    if (!t) throw new Error("Empty message");
-
-    const raw = await apiSendMessage({ chatId, senderId, text: t });
-    const msg = normMessage(raw);
-
-    setMessages((prev) => [...prev, msg]);
-    return msg;
-  };
-
-  const messagesForChat: AppData["messagesForChat"] = (chatId) => {
-    return (messages ?? [])
-      .filter((m) => m.chatId === String(chatId))
-      .sort((a, b) => {
-        const ta = Date.parse(a.createdAt ?? "") || 0;
-        const tb = Date.parse(b.createdAt ?? "") || 0;
-        return ta - tb;
+        return Array.from(byId.values()).sort((a, b) => b.updatedAt - a.updatedAt);
       });
+    } catch {}
   };
 
-  const resetAllLocal = () => {
-    setRequests([]);
-    setChats([]);
-    setMessages([]);
+  const refreshMessages = async (chatId: string) => {
+    try {
+      const apiMsgs = await apiGetMessages(String(chatId));
+      if (!Array.isArray(apiMsgs)) return;
+
+      setMessagesByChatId((prev) => {
+        const normalized = (apiMsgs as any[]).map((m) => ({
+          id: String(m.id ?? uid("m")),
+          chatId: String(chatId),
+          senderId: String(m.senderId ?? m.sender_id ?? "s1"),
+          text: String(m.text ?? ""),
+          createdAt: Number(m.createdAt ?? m.created_at ?? Date.now()),
+        })) as Message[];
+
+        return { ...prev, [chatId]: normalized.sort((a, b) => a.createdAt - b.createdAt) };
+      });
+    } catch {}
   };
 
-  const value = useMemo<AppData>(
+  const sendMessage = async (input: SendMessageInput) => {
+    const msg: Message = {
+      id: uid("m"),
+      chatId: String(input.chatId),
+      senderId: String(input.senderId),
+      text: String(input.text),
+      createdAt: Date.now(),
+    };
+
+    setMessagesByChatId((prev) => {
+      const arr = prev[msg.chatId] ?? [];
+      return { ...prev, [msg.chatId]: [...arr, msg] };
+    });
+
+    setChats((prev) => {
+      const next = prev.map((c) =>
+        c.id === msg.chatId ? { ...c, lastMessage: msg.text, updatedAt: Date.now() } : c
+      );
+      return next.sort((a, b) => b.updatedAt - a.updatedAt);
+    });
+
+    try {
+      await apiSendMessage({ chatId: msg.chatId, senderId: msg.senderId, text: msg.text } as any);
+    } catch {}
+  };
+
+  const value = useMemo(
     () => ({
       requests,
       chats,
-      messages,
-      reloadAll,
-      reloadRequestsForTeacher,
-      reloadChatsForMe,
+      messagesByChatId,
       createRequest,
       acceptRequest,
       rejectRequest,
-      loadMessages,
+      refreshChatsForUser,
+      refreshMessages,
       sendMessage,
-      messagesForChat,
-      resetAllLocal,
     }),
-    [requests, chats, messages]
+    [requests, chats, messagesByChatId]
   );
 
-  return <Ctx.Provider value={value}>{children}</Ctx.Provider>;
+  return <AppDataContext.Provider value={value}>{children}</AppDataContext.Provider>;
 }
 
 export function useAppData() {
-  const v = useContext(Ctx);
-  if (!v) throw new Error("useAppData must be used inside AppDataProvider");
-  return v;
+  const ctx = useContext(AppDataContext);
+  if (!ctx) throw new Error("useAppData must be used inside AppDataProvider");
+  return ctx;
 }

@@ -2,67 +2,77 @@ import React, { useState } from "react";
 import { Text, TextInput, TouchableOpacity, StyleSheet, Alert, ScrollView } from "react-native";
 import { NativeStackScreenProps } from "@react-navigation/native-stack";
 import { RootStackParamList } from "../../App";
-import { useAuth } from "./context/AuthContext"; // <-- bei dir ist das so
-import { upsertTeacher } from "./api/api";       // <-- bei dir ist das so
+import { useAuth } from "./context/AuthContext";
+import { upsertTeacher } from "./api/api";
 
 type Props = NativeStackScreenProps<RootStackParamList, "TeacherProfileSetup">;
 
 export default function TeacherProfileSetupScreen({ navigation, route }: Props) {
-  const { user } = useAuth();
+  const { user, updateTeacherProfile } = useAuth();
   const { name, email } = route.params;
 
   const authUid = String(user?.id ?? user?.uid ?? "");
-  const [subjects, setSubjects] = useState("");
-  const [hourlyRate, setHourlyRate] = useState("");
+  const [subjects, setSubjects] = useState("Mathe");
+  const [hourlyRate, setHourlyRate] = useState("25");
   const [city, setCity] = useState("");
   const [bio, setBio] = useState("");
 
   const handleSave = async () => {
     if (!authUid) {
-      Alert.alert("Fehler", "Kein authUid gefunden. Bitte neu einloggen.");
+      Alert.alert("Fehler", "Kein User gefunden. Bitte nochmal starten.");
       return;
     }
 
-    if (!subjects.trim() || !hourlyRate.trim() || !city.trim()) {
-      Alert.alert("Fehlt noch was", "Bitte Fächer, Preis und Ort ausfüllen.");
+    const rate = Number(hourlyRate);
+    if (!subjects.trim() || !hourlyRate.trim() || !city.trim() || Number.isNaN(rate) || rate <= 0) {
+      Alert.alert("Fehlt noch was", "Bitte Fächer, Preis (Zahl) und Ort ausfüllen.");
       return;
     }
+
+    const subjectList = subjects
+      .split(",")
+      .map((s) => s.trim())
+      .filter(Boolean);
 
     try {
-      const subject = subjects
-        .split(",")
-        .map((s) => s.trim())
-        .filter(Boolean)
-        .join(", ");
-
+      // ✅ Demo/API call (optional)
       await upsertTeacher({
         authUid,
         name,
-        subject,
+        subject: subjectList.join(", "),
         city: city.trim(),
         bio: bio.trim() || null,
-        pricePerHour: Number(hourlyRate),
+        pricePerHour: rate,
       });
 
-      navigation.replace("MainTabs");
+      // ✅ WICHTIG: Context updaten -> Root switched automatisch in die App
+      updateTeacherProfile({
+        subjects: subjectList,
+        hourlyRate: rate,
+        city: city.trim(),
+        bio: bio.trim() || undefined,
+      });
+
+      // ✅ Kein replace("MainTabs") mehr. Nur safe zurück.
+      if (navigation.canGoBack()) navigation.goBack();
     } catch (e: any) {
       Alert.alert("Fehler", String(e?.message || e));
     }
   };
 
   return (
-    <ScrollView contentContainerStyle={styles.container}>
+    <ScrollView contentContainerStyle={styles.container} keyboardShouldPersistTaps="handled">
       <Text style={styles.title}>Lehrerprofil einrichten</Text>
 
       <Text style={styles.small}>Name: {name}</Text>
       <Text style={styles.small}>E-Mail: {email}</Text>
-      <Text style={[styles.small, { marginTop: 6, opacity: 0.6 }]}>authUid: {authUid || "—"}</Text>
 
       <TextInput
         style={styles.input}
         placeholder="Fächer (z.B. Mathe, Englisch)"
         value={subjects}
         onChangeText={setSubjects}
+        autoCapitalize="sentences"
       />
 
       <TextInput
