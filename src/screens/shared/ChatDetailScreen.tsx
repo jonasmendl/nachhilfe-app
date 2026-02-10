@@ -37,9 +37,6 @@ export default function ChatDetailScreen() {
   const { user } = useAuth();
   const { chats, messagesByChatId, refreshMessages, sendMessage } = useAppData();
 
-  // ✅ akzeptiert beide Varianten:
-  // - navigation.navigate("ChatDetail", { chat })
-  // - navigation.navigate("ChatDetail", { chatId })
   const routeChat = route?.params?.chat ?? null;
   const routeChatId = safeString(route?.params?.chatId ?? "");
 
@@ -77,7 +74,6 @@ export default function ChatDetailScreen() {
     navigation.setOptions({ title });
   }, [navigation, title]);
 
-  // ✅ Defensive: wenn chatId fehlt -> nie White Screen
   useEffect(() => {
     if (!chatId) {
       const t = setTimeout(() => {
@@ -88,18 +84,21 @@ export default function ChatDetailScreen() {
     }
   }, [chatId, navigation]);
 
-  const load = useCallback(async () => {
-    if (!chatId) return;
-    try {
-      setLoading(true);
-      setError(null);
-      await refreshMessages(chatId);
-    } catch (e: any) {
-      setError(safeString(e?.message || e) || "Unbekannter Fehler");
-    } finally {
-      setLoading(false);
-    }
-  }, [chatId, refreshMessages]);
+  const load = useCallback(
+    async (opts?: { force?: boolean }) => {
+      if (!chatId) return;
+      try {
+        setLoading(true);
+        setError(null);
+        await refreshMessages(chatId, opts);
+      } catch (e: any) {
+        setError(safeString(e?.message || e) || "Unbekannter Fehler");
+      } finally {
+        setLoading(false);
+      }
+    },
+    [chatId, refreshMessages]
+  );
 
   useEffect(() => {
     if (!chatId) return;
@@ -161,7 +160,7 @@ export default function ChatDetailScreen() {
           <Text style={{ color: "crimson", fontWeight: "800", textAlign: "center" }}>{error}</Text>
 
           <TouchableOpacity
-            onPress={load}
+            onPress={() => load({ force: true })}
             style={{
               marginTop: 12,
               paddingHorizontal: 12,
@@ -221,7 +220,7 @@ export default function ChatDetailScreen() {
           <Text style={{ fontSize: 20, fontWeight: "900" }}>{title}</Text>
 
           <TouchableOpacity
-            onPress={load}
+            onPress={() => load({ force: true })}
             style={{
               paddingHorizontal: 12,
               paddingVertical: 8,
@@ -231,7 +230,7 @@ export default function ChatDetailScreen() {
             }}
             disabled={loading}
           >
-            <Text style={{ fontWeight: "800" }}>{loading ? "..." : "Reload"}</Text>
+            <Text style={{ fontWeight: "800" }}>{loading ? "..." : "Neu laden"}</Text>
           </TouchableOpacity>
         </View>
 

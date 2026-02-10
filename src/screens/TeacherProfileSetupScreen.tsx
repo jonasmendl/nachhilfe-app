@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import React, { useMemo, useState } from "react";
 import { Text, TextInput, TouchableOpacity, StyleSheet, Alert, ScrollView } from "react-native";
 import { NativeStackScreenProps } from "@react-navigation/native-stack";
 import { RootStackParamList } from "../../App";
@@ -9,13 +9,26 @@ type Props = NativeStackScreenProps<RootStackParamList, "TeacherProfileSetup">;
 
 export default function TeacherProfileSetupScreen({ navigation, route }: Props) {
   const { user, updateTeacherProfile } = useAuth();
-  const { name, email } = route.params;
 
-  const authUid = String(user?.id ?? user?.uid ?? "");
-  const [subjects, setSubjects] = useState("Mathe");
-  const [hourlyRate, setHourlyRate] = useState("25");
-  const [city, setCity] = useState("");
-  const [bio, setBio] = useState("");
+  const safeName = route?.params?.name ?? user?.name ?? "";
+  const safeEmail = route?.params?.email ?? user?.email ?? "";
+
+  const authUid = String(user?.id ?? (user as any)?.uid ?? "");
+
+  const initial = useMemo(() => {
+    const tp = user?.teacherProfile;
+    return {
+      subjects: tp?.subjects?.length ? tp.subjects.join(", ") : "",
+      hourlyRate: tp?.hourlyRate ? String(tp.hourlyRate) : "",
+      city: tp?.city ?? "",
+      bio: tp?.bio ?? "",
+    };
+  }, [user]);
+
+  const [subjects, setSubjects] = useState(initial.subjects);
+  const [hourlyRate, setHourlyRate] = useState(initial.hourlyRate);
+  const [city, setCity] = useState(initial.city);
+  const [bio, setBio] = useState(initial.bio);
 
   const handleSave = async () => {
     if (!authUid) {
@@ -35,17 +48,16 @@ export default function TeacherProfileSetupScreen({ navigation, route }: Props) 
       .filter(Boolean);
 
     try {
-      // ✅ Demo/API call (optional)
       await upsertTeacher({
         authUid,
-        name,
+        name: safeName || "Teacher",
         subject: subjectList.join(", "),
         city: city.trim(),
         bio: bio.trim() || null,
         pricePerHour: rate,
-      });
+        email: safeEmail || undefined,
+      } as any);
 
-      // ✅ WICHTIG: Context updaten -> Root switched automatisch in die App
       updateTeacherProfile({
         subjects: subjectList,
         hourlyRate: rate,
@@ -53,8 +65,8 @@ export default function TeacherProfileSetupScreen({ navigation, route }: Props) 
         bio: bio.trim() || undefined,
       });
 
-      // ✅ Kein replace("MainTabs") mehr. Nur safe zurück.
       if (navigation.canGoBack()) navigation.goBack();
+      else navigation.navigate("SignUp" as any);
     } catch (e: any) {
       Alert.alert("Fehler", String(e?.message || e));
     }
@@ -64,8 +76,8 @@ export default function TeacherProfileSetupScreen({ navigation, route }: Props) 
     <ScrollView contentContainerStyle={styles.container} keyboardShouldPersistTaps="handled">
       <Text style={styles.title}>Lehrerprofil einrichten</Text>
 
-      <Text style={styles.small}>Name: {name}</Text>
-      <Text style={styles.small}>E-Mail: {email}</Text>
+      <Text style={styles.small}>Name: {safeName || "-"}</Text>
+      <Text style={styles.small}>E-Mail: {safeEmail || "-"}</Text>
 
       <TextInput
         style={styles.input}
@@ -83,12 +95,7 @@ export default function TeacherProfileSetupScreen({ navigation, route }: Props) 
         keyboardType="numeric"
       />
 
-      <TextInput
-        style={styles.input}
-        placeholder="Ort / Stadt"
-        value={city}
-        onChangeText={setCity}
-      />
+      <TextInput style={styles.input} placeholder="Ort / Stadt" value={city} onChangeText={setCity} />
 
       <TextInput
         style={[styles.input, styles.textArea]}

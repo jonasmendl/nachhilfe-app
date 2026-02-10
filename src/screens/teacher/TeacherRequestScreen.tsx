@@ -38,7 +38,7 @@ export default function TeacherRequestScreen({ navigation }: any) {
     return (
       <View style={styles.card}>
         <Text style={styles.name}>{studentName}</Text>
-        <Text style={styles.sub}>
+        <Text style={styles.subLine}>
           {subject} • {city}
         </Text>
 
@@ -62,7 +62,6 @@ export default function TeacherRequestScreen({ navigation }: any) {
               try {
                 const { chatId } = await acceptRequest(r);
 
-                // ✅ Defensive Navigation: ChatDetail kann jetzt chatId ODER chat nehmen
                 if (navigation?.navigate) {
                   navigation.navigate("ChatDetail", { chatId, chat: null });
                 }
@@ -83,9 +82,9 @@ export default function TeacherRequestScreen({ navigation }: any) {
       <View style={styles.container}>
         <Text style={styles.header}>Anfragen</Text>
         <Text style={styles.title}>Keine Anfragen</Text>
-        <Text style={styles.sub}>Für dich ist gerade nichts offen.</Text>
+        <Text style={styles.subEmpty}>Für dich ist gerade nichts offen.</Text>
         <TouchableOpacity style={styles.btn} onPress={onRefresh}>
-          <Text style={styles.btnText}>Refresh</Text>
+          <Text style={styles.btnText}>Neu laden</Text>
         </TouchableOpacity>
       </View>
     );
@@ -109,8 +108,8 @@ export default function TeacherRequestScreen({ navigation }: any) {
 const styles = StyleSheet.create({
   container: { flex: 1, padding: 16, backgroundColor: "#fff" },
   header: { fontSize: 22, fontWeight: "800", marginBottom: 12 },
-  title: { fontSize: 20, fontWeight: "900", marginTop: 12 },
-  sub: { opacity: 0.65, marginTop: 6, textAlign: "center" },
+  title: { fontSize: 20, fontWeight: "900", marginTop: 12, textAlign: "center" },
+  subEmpty: { opacity: 0.65, marginTop: 6, textAlign: "center" },
 
   card: {
     borderWidth: 1,
@@ -120,6 +119,8 @@ const styles = StyleSheet.create({
     marginBottom: 12,
   },
   name: { fontSize: 18, fontWeight: "900" },
+
+  subLine: { opacity: 0.65, marginTop: 6 },
 
   row: { flexDirection: "row", gap: 10, marginTop: 12 },
   actionBtn: { flex: 1, padding: 12, borderRadius: 12, alignItems: "center" },

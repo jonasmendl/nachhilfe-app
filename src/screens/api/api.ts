@@ -146,7 +146,7 @@ async function request(path: string, options: RequestInit = {}) {
     if (path === "/api/chats" && options.method === "POST") {
       const payload = JSON.parse(String(options.body || "{}"));
 
-      // ✅ FIX: deterministische Chat-ID, damit kein doppelter Chat entsteht
+      // ✅ deterministische Chat-ID, damit kein doppelter Chat entsteht
       const studentId = payload.studentId ?? "";
       const teacherId = payload.teacherId ?? "";
       const deterministicId = payload.id ? String(payload.id) : makeChatId(studentId, teacherId);
@@ -165,16 +165,10 @@ async function request(path: string, options: RequestInit = {}) {
       if (idx >= 0) DEMO_CHATS[idx] = { ...DEMO_CHATS[idx], ...chat };
       else DEMO_CHATS.unshift(chat);
 
+      // ✅ WICHTIG: KEINE Auto-Message beim Chat erstellen.
+      // Teacher/Student sollen die erste Nachricht selbst schreiben.
       if (!DEMO_MESSAGES[chat.id]) {
-        DEMO_MESSAGES[chat.id] = [
-          {
-            id: mkId("m"),
-            chatId: chat.id,
-            senderId: payload.teacherId ?? "t1",
-            text: "Hi 🙂 ich kann heute… 17:00–18:00?",
-            createdAt: Date.now(),
-          },
-        ];
+        DEMO_MESSAGES[chat.id] = [];
       }
 
       return chat;

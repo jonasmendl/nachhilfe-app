@@ -68,7 +68,7 @@ type AppDataContextValue = {
   rejectRequest: (requestOrId: any) => Promise<void>;
 
   refreshChatsForUser: (userId: string) => Promise<void>;
-  refreshMessages: (chatId: string) => Promise<void>;
+  refreshMessages: (chatId: string, opts?: { force?: boolean }) => Promise<void>;
   sendMessage: (input: SendMessageInput) => Promise<void>;
 };
 
@@ -186,6 +186,11 @@ export function AppDataProvider({ children }: { children: React.ReactNode }) {
     ],
   }));
 
+  // ✅ NEU: loaded-Flag, damit auch leere Chats nicht dauernd re-fetch machen
+  const [loadedMessagesByChatId, setLoadedMessagesByChatId] = useState<Record<string, boolean>>(() => ({
+    [seedChatId]: true,
+  }));
+
   const createRequest = async (input: CreateRequestInput) => {
     try {
       await apiCreateRequest(input as any);
@@ -232,22 +237,7 @@ export function AppDataProvider({ children }: { children: React.ReactNode }) {
       return [chat, ...prev];
     });
 
-    setMessagesByChatId((prev) => {
-      if (prev[chatId]?.length) return prev;
-      return {
-        ...prev,
-        [chatId]: [
-          {
-            id: uid("m"),
-            chatId,
-            senderId: req.teacherId,
-            text: "Hi 🙂 ich kann heute… 17:00–18:00?",
-            createdAt: Date.now(),
-          },
-        ],
-      };
-    });
-
+    // ✅ keine Auto-Message erzeugen (Chat startet leer)
     return chatId;
   };
 
@@ -286,9 +276,6 @@ export function AppDataProvider({ children }: { children: React.ReactNode }) {
 
     const chatId = ensureChatExists({ ...req, status: "accepted" });
 
-    // ✅ wichtig gegen "doppelte Lena":
-    // - demo-api hat früher random chatId erzeugt -> refreshChatsForUser hat 2 Chats erzeugt
-    // - jetzt schicken wir Namen mit und demo-api nutzt deterministische id (siehe api.ts)
     try {
       await apiCreateChat({
         requestId: String(req.id),
@@ -299,6 +286,9 @@ export function AppDataProvider({ children }: { children: React.ReactNode }) {
         id: chatId,
       } as any);
     } catch {}
+
+    // ✅ Markiere Messages als "noch nicht geladen" (damit initial 1x fetch gemacht wird)
+    setLoadedMessagesByChatId((prev) => ({ ...prev, [chatId]: false }));
 
     return { chatId };
   };
@@ -330,14 +320,12 @@ export function AppDataProvider({ children }: { children: React.ReactNode }) {
             id: String(c.id),
             studentId: String(c.studentId ?? c.student_id ?? ""),
             teacherId: String(c.teacherId ?? c.teacher_id ?? ""),
-            // ✅ kein "Lena/Lisa" default (sonst Phantom-Duplikate)
             studentName: String(c.studentName ?? c.student_name ?? ""),
             teacherName: String(c.teacherName ?? c.teacher_name ?? ""),
             lastMessage: c.lastMessage ?? c.last_message ?? undefined,
             updatedAt: Number(c.updatedAt ?? c.updated_at ?? Date.now()),
           };
 
-          // defensive guard: ohne ids keinen Müll reinziehen
           if (!normalized.id || !normalized.studentId || !normalized.teacherId) continue;
 
           byId.set(normalized.id, normalized);
@@ -348,12 +336,20 @@ export function AppDataProvider({ children }: { children: React.ReactNode }) {
     } catch {}
   };
 
-  const refreshMessages = async (chatId: string) => {
-    if (messagesByChatId[chatId]?.length) return;
+  const refreshMessages = async (chatId: string, opts?: { force?: boolean }) => {
+    if (!chatId) return;
+
+    const force = Boolean(opts?.force);
+
+    // ✅ wenn schon geladen (auch leere []), nicht jedes Mal neu laden
+    if (!force && loadedMessagesByChatId[chatId]) return;
 
     try {
       const apiMsgs = await apiGetMessages(String(chatId));
-      if (!Array.isArray(apiMsgs)) return;
+      if (!Array.isArray(apiMsgs)) {
+        setLoadedMessagesByChatId((prev) => ({ ...prev, [chatId]: true }));
+        return;
+      }
 
       setMessagesByChatId((prev) => {
         const normalized = (apiMsgs as any[]).map((m) => ({
@@ -366,7 +362,12 @@ export function AppDataProvider({ children }: { children: React.ReactNode }) {
 
         return { ...prev, [chatId]: normalized.sort((a, b) => a.createdAt - b.createdAt) };
       });
-    } catch {}
+
+      // ✅ loaded immer true setzen, auch wenn normalized = []
+      setLoadedMessagesByChatId((prev) => ({ ...prev, [chatId]: true }));
+    } catch {
+      // bei Fehler nicht "loaded" setzen, damit Retry möglich bleibt
+    }
   };
 
   const sendMessage = async (input: SendMessageInput) => {
@@ -382,6 +383,9 @@ export function AppDataProvider({ children }: { children: React.ReactNode }) {
       const arr = prev[msg.chatId] ?? [];
       return { ...prev, [msg.chatId]: [...arr, msg] };
     });
+
+    // ✅ sobald man schreibt, ist dieser Chat definitiv "geladen"
+    setLoadedMessagesByChatId((prev) => ({ ...prev, [msg.chatId]: true }));
 
     setChats((prev) => {
       const next = prev.map((c) => (c.id === msg.chatId ? { ...c, updatedAt: Date.now() } : c));
@@ -405,7 +409,7 @@ export function AppDataProvider({ children }: { children: React.ReactNode }) {
       refreshMessages,
       sendMessage,
     }),
-    [requests, chats, messagesByChatId]
+    [requests, chats, messagesByChatId, loadedMessagesByChatId]
   );
 
   return <AppDataContext.Provider value={value}>{children}</AppDataContext.Provider>;

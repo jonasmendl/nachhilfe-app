@@ -9,7 +9,7 @@ export default function ProfileScreen() {
   const isStudent = user?.role === "Student";
 
   const initialTeacher = useMemo(() => {
-    return user?.teacherProfile ?? { subjects: [], hourlyRate: 25, city: "", bio: "" };
+    return user?.teacherProfile ?? { subjects: [], hourlyRate: "", city: "", bio: "" };
   }, [user]);
 
   const initialStudent = useMemo(() => {
