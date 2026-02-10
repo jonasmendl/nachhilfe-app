@@ -4,12 +4,18 @@ import { useAuth } from "../context/AuthContext";
 import { useAppData } from "../context/AppDataContext";
 import { useNavigation } from "@react-navigation/native";
 
+function firstName(fullName: any) {
+  const s = String(fullName ?? "").trim();
+  if (!s) return "";
+  return s.split(/\s+/)[0];
+}
+
 export default function ChatsScreen() {
   const { user } = useAuth();
   const { chats, refreshChatsForUser } = useAppData();
   const navigation = useNavigation<any>();
 
-  const myId = String(user?.id ?? user?.uid ?? "");
+  const myId = String((user as any)?.id ?? (user as any)?.uid ?? "");
   const role = user?.role;
 
   useEffect(() => {
@@ -25,7 +31,6 @@ export default function ChatsScreen() {
   }, [chats, myId]);
 
   const openChat = (chat: any) => {
-    // ✅ Stack Screen erwartet { chat }
     navigation.navigate("ChatDetail", { chat });
   };
 
@@ -41,17 +46,17 @@ export default function ChatsScreen() {
           keyExtractor={(item) => String(item.id)}
           ItemSeparatorComponent={() => <View style={{ height: 10 }} />}
           renderItem={({ item }) => {
-            const otherName =
+            const other =
               role === "Teacher"
-                ? String(item.studentName ?? "Schüler")
-                : String(item.teacherName ?? "Lehrer");
+                ? firstName(item.studentName ?? "Schüler")
+                : firstName(item.teacherName ?? "Lehrer");
 
             return (
               <TouchableOpacity style={styles.card} onPress={() => openChat(item)}>
-                <Text style={styles.title}>{otherName}</Text>
-                <Text style={styles.sub}>
-                  {String(item.lastMessage ?? "Tippe, um den Chat zu öffnen")}
-                </Text>
+                <Text style={styles.title}>{other || "Chat"}</Text>
+
+                {/* ✅ MVP: Liste zeigt KEIN Preview, Text erst im Chat */}
+                <Text style={styles.sub}>Tippe, um den Chat zu öffnen</Text>
               </TouchableOpacity>
             );
           }}

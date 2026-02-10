@@ -1,3 +1,4 @@
+// App.tsx
 import React, { useEffect } from "react";
 import { NavigationContainer } from "@react-navigation/native";
 import { createNativeStackNavigator } from "@react-navigation/native-stack";
@@ -21,7 +22,8 @@ export type RootStackParamList = {
   TeacherProfileSetup: { name: string; email: string; role: "Teacher" };
   VerifyEmail: { email: string };
   MainTabs: undefined;
-  ChatDetail: { chat: any };
+  // ✅ akzeptiert jetzt beides (TeacherRequest navigiert mit chatId)
+  ChatDetail: { chat?: any | null; chatId?: string | null };
 };
 
 export const navigationRef = createNavigationContainerRef<RootStackParamList>();
@@ -52,7 +54,7 @@ function AppNavigator() {
         name="ChatDetail"
         component={ChatDetailScreen}
         options={{ title: "Chat" }}
-        initialParams={{ chat: null }}
+        initialParams={{ chat: null, chatId: null }}
       />
     </AppStack.Navigator>
   );

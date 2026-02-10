@@ -1,3 +1,4 @@
+// src/screens/StudentSwipeScreen.tsx
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import {
   View,
@@ -29,19 +30,57 @@ const SWIPE_OUT_DURATION = 220;
 
 export default function StudentSwipeScreen() {
   const { user } = useAuth();
-  const { createRequest, requests } = useAppData();
+  const { createRequest, requests, chats } = useAppData();
 
   const [teachers, setTeachers] = useState<Teacher[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
+  // ✅ Neu: lokal "weggewischt" (Nein) – muss sofort verschwinden in der Demo
+  const [dismissedTeacherIds, setDismissedTeacherIds] = useState<Set<string>>(() => new Set());
+
   const [index, setIndex] = useState(0);
   const position = useRef(new Animated.ValueXY({ x: 0, y: 0 })).current;
 
-  const studentId = String(user?.id ?? user?.uid ?? "s1");
-  const studentName = String(user?.name ?? user?.displayName ?? "Schüler");
+  const studentId = String(user?.id ?? "s1");
+  const studentName = String(user?.name ?? "Schüler");
 
-  const currentTeacher = teachers[index] ?? null;
+  const alreadyRequested = (teacherId: string) => {
+    return requests.some(
+      (r) =>
+        String(r.studentId) === String(studentId) &&
+        String(r.teacherId) === String(teacherId) &&
+        (r.status === "pending" || r.status === "accepted")
+    );
+  };
+
+  const alreadyChatted = (teacherId: string) => {
+    return chats.some(
+      (c) => String(c.studentId) === String(studentId) && String(c.teacherId) === String(teacherId)
+    );
+  };
+
+  // ✅ nur "neue" Lehrer anzeigen:
+  // - nicht angefragt
+  // - nicht im Chat
+  // - nicht weggewischt ("Nein") in dieser Session
+  const visibleTeachers = useMemo(() => {
+    const dismissed = dismissedTeacherIds;
+    return (teachers ?? []).filter((t) => {
+      const tid = String(t.id);
+      return !dismissed.has(tid) && !alreadyRequested(tid) && !alreadyChatted(tid);
+    });
+  }, [teachers, requests, chats, studentId, dismissedTeacherIds]);
+
+  const currentTeacher = visibleTeachers[index] ?? null;
+
+  useEffect(() => {
+    // defensive: wenn Liste schrumpft, Index wieder gültig machen
+    if (index >= visibleTeachers.length) {
+      setIndex(0);
+      position.setValue({ x: 0, y: 0 });
+    }
+  }, [index, visibleTeachers.length, position]);
 
   const rotate = position.x.interpolate({
     inputRange: [-width * 1.2, 0, width * 1.2],
@@ -72,21 +111,7 @@ export default function StudentSwipeScreen() {
 
   const nextCard = () => setIndex((prev) => prev + 1);
 
-  const alreadyRequested = (teacherId: string) => {
-    return requests.some(
-      (r) =>
-        String(r.studentId) === String(studentId) &&
-        String(r.teacherId) === String(teacherId) &&
-        (r.status === "pending" || r.status === "accepted")
-    );
-  };
-
   const likeTeacher = async (t: Teacher) => {
-    if (alreadyRequested(t.id)) {
-      Alert.alert("Schon angefragt", `Du hast ${t.name} bereits angefragt.`);
-      return;
-    }
-
     try {
       await createRequest({
         studentId,
@@ -104,6 +129,15 @@ export default function StudentSwipeScreen() {
     }
   };
 
+  const dismissTeacher = (t: Teacher) => {
+    const tid = String(t.id);
+    setDismissedTeacherIds((prev) => {
+      const next = new Set(prev);
+      next.add(tid);
+      return next;
+    });
+  };
+
   const swipeOut = (direction: "left" | "right") => {
     if (!currentTeacher) return;
 
@@ -116,7 +150,11 @@ export default function StudentSwipeScreen() {
     }).start(() => {
       if (direction === "right") {
         void likeTeacher(currentTeacher);
+      } else {
+        // ✅ "Nein" muss sofort weg sein
+        dismissTeacher(currentTeacher);
       }
+
       position.setValue({ x: 0, y: 0 });
       nextCard();
     });
@@ -128,7 +166,6 @@ export default function StudentSwipeScreen() {
         Math.abs(gesture.dx) > 6 || Math.abs(gesture.dy) > 6,
 
       onPanResponderGrant: () => {
-        // ✅ verhindert “halb kleben”
         position.setOffset({
           // @ts-ignore
           x: position.x.__getValue(),
@@ -182,12 +219,12 @@ export default function StudentSwipeScreen() {
     return () => {
       cancelled = true;
     };
-  }, []);
+  }, [position]);
 
   if (loading) {
     return (
       <View style={styles.container}>
-        <Text style={styles.header}>Swipen</Text>
+        <Text style={styles.header}>Lehrer</Text>
         <View style={styles.center}>
           <ActivityIndicator />
           <Text style={styles.muted}>Lade Lehrer…</Text>
@@ -199,7 +236,7 @@ export default function StudentSwipeScreen() {
   if (error) {
     return (
       <View style={styles.container}>
-        <Text style={styles.header}>Swipen</Text>
+        <Text style={styles.header}>Lehrer</Text>
         <View style={styles.center}>
           <Text style={styles.title}>Konnte Lehrer nicht laden</Text>
           <Text style={styles.muted}>{error}</Text>
@@ -211,10 +248,10 @@ export default function StudentSwipeScreen() {
   if (!currentTeacher) {
     return (
       <View style={styles.container}>
-        <Text style={styles.header}>Swipen</Text>
+        <Text style={styles.header}>Lehrer</Text>
         <View style={styles.center}>
-          <Text style={styles.title}>Keine Lehrer mehr</Text>
-          <Text style={styles.muted}>Komm später wieder.</Text>
+          <Text style={styles.title}>Keine neuen Lehrer</Text>
+          <Text style={styles.muted}>Du hast alle passenden Lehrer schon gesehen.</Text>
         </View>
       </View>
     );
@@ -222,7 +259,7 @@ export default function StudentSwipeScreen() {
 
   return (
     <View style={styles.container}>
-      <Text style={styles.header}>Swipen</Text>
+      <Text style={styles.header}>Lehrer</Text>
 
       <View style={styles.cardArea}>
         <Animated.View style={[styles.card, cardStyle]} {...panResponder.panHandlers}>
@@ -233,10 +270,6 @@ export default function StudentSwipeScreen() {
 
           {currentTeacher.pricePerHour != null && (
             <Text style={styles.meta}>{Number(currentTeacher.pricePerHour)}€/h</Text>
-          )}
-
-          {alreadyRequested(String(currentTeacher.id)) && (
-            <Text style={styles.badge}>Anfrage läuft</Text>
           )}
 
           <Text style={styles.hint}>Wische links/rechts</Text>
@@ -280,16 +313,6 @@ const styles = StyleSheet.create({
   meta: { fontSize: 16, marginTop: 4 },
   bio: { fontSize: 15, marginTop: 10, opacity: 0.8 },
   hint: { marginTop: 18, opacity: 0.5 },
-
-  badge: {
-    marginTop: 12,
-    alignSelf: "flex-start",
-    paddingVertical: 6,
-    paddingHorizontal: 10,
-    borderRadius: 999,
-    backgroundColor: "#eee",
-    fontWeight: "700",
-  },
 
   buttons: { flexDirection: "row", gap: 12, paddingVertical: 10 },
   btn: { flex: 1, padding: 14, borderRadius: 14, alignItems: "center" },

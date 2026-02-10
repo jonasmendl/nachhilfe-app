@@ -1,9 +1,12 @@
+// src/context/AppDataContext.tsx
 import React, { createContext, useContext, useMemo, useState } from "react";
 import {
   getChats as apiGetChats,
   getMessages as apiGetMessages,
   sendMessage as apiSendMessage,
   createRequest as apiCreateRequest,
+  createChat as apiCreateChat,
+  patchRequest as apiPatchRequest,
 } from "../api/api";
 
 export type RequestStatus = "pending" | "accepted" | "rejected";
@@ -61,8 +64,6 @@ type AppDataContextValue = {
   messagesByChatId: Record<string, Message[]>;
 
   createRequest: (input: CreateRequestInput) => Promise<Request>;
-
-  // ✅ accepts: requestId (string) ODER request object (any)
   acceptRequest: (requestOrId: any) => Promise<{ chatId: string }>;
   rejectRequest: (requestOrId: any) => Promise<void>;
 
@@ -81,13 +82,20 @@ function makeChatId(studentId: string, teacherId: string) {
   return `c_${studentId}_${teacherId}`;
 }
 
+function firstName(name: string) {
+  const n = String(name || "").trim();
+  if (!n) return "";
+  return n.split(/\s+/)[0] || n;
+}
+
 function normalizeIncomingRequest(input: any): Request {
-  // supports snake_case from api + camelCase from app + demo
   const id = String(input?.id ?? uid("r"));
   const studentId = String(input?.studentId ?? input?.student_id ?? "s1");
   const teacherId = String(input?.teacherId ?? input?.teacher_id ?? "t1");
-  const studentName = String(input?.studentName ?? input?.student_name ?? "Lena Fischer");
-  const teacherName = String(input?.teacherName ?? input?.teacher_name ?? "Herr Bauer");
+
+  const studentName = String(input?.studentName ?? input?.student_name ?? "Lena");
+  const teacherName = String(input?.teacherName ?? input?.teacher_name ?? "Lisa");
+
   const subject = String(input?.subject ?? "Mathe");
   const city = String(input?.city ?? "Berlin");
   const when = String(input?.when ?? "Heute 16:30");
@@ -109,30 +117,76 @@ function normalizeIncomingRequest(input: any): Request {
 }
 
 export function AppDataProvider({ children }: { children: React.ReactNode }) {
-  // ✅ Demo seed: pending request (realistic name)
-  const [requests, setRequests] = useState<Request[]>(() => {
-    const now = Date.now();
-    return [
-      {
-        id: "r_demo_1",
-        studentId: "s1",
-        studentName: "Lena Fischer",
-        teacherId: "t1",
-        teacherName: "Herr Bauer",
-        subject: "Mathe",
-        city: "Berlin",
-        when: "Heute 16:30",
-        status: "pending",
-        createdAt: now - 1000 * 60 * 10,
-      },
-    ];
-  });
+  const now = Date.now();
 
-  const [chats, setChats] = useState<Chat[]>([]);
-  const [messagesByChatId, setMessagesByChatId] = useState<Record<string, Message[]>>({});
+  const seedChatId = makeChatId("s1", "t1");
+
+  const [requests, setRequests] = useState<Request[]>(() => [
+    {
+      id: "r_demo_pending_1",
+      studentId: "s2",
+      studentName: "Noah",
+      teacherId: "t1",
+      teacherName: "Lisa",
+      subject: "Mathe",
+      city: "Berlin",
+      when: "heute nachmittags",
+      status: "pending",
+      createdAt: now - 1000 * 60 * 18,
+    },
+    {
+      id: "r_demo_pending_2",
+      studentId: "s3",
+      studentName: "Mia",
+      teacherId: "t1",
+      teacherName: "Lisa",
+      subject: "Englisch",
+      city: "Berlin",
+      when: "so bald wie möglich",
+      status: "pending",
+      createdAt: now - 1000 * 60 * 9,
+    },
+  ]);
+
+  const [chats, setChats] = useState<Chat[]>(() => [
+    {
+      id: seedChatId,
+      studentId: "s1",
+      studentName: "Lena",
+      teacherId: "t1",
+      teacherName: "Lisa",
+      lastMessage: undefined,
+      updatedAt: now - 1000 * 60 * 2,
+    },
+  ]);
+
+  const [messagesByChatId, setMessagesByChatId] = useState<Record<string, Message[]>>(() => ({
+    [seedChatId]: [
+      {
+        id: "m_seed_1",
+        chatId: seedChatId,
+        senderId: "t1",
+        text: "Hi 🙂 ich kann heute… 17:00–18:00?",
+        createdAt: now - 1000 * 60 * 6,
+      },
+      {
+        id: "m_seed_2",
+        chatId: seedChatId,
+        senderId: "s1",
+        text: "Hi! Ja, 17:00 passt. Es geht um lineare Funktionen 🙈",
+        createdAt: now - 1000 * 60 * 5,
+      },
+      {
+        id: "m_seed_3",
+        chatId: seedChatId,
+        senderId: "t1",
+        text: "Super. Schick mir kurz eine Aufgabe, dann starten wir direkt 👍",
+        createdAt: now - 1000 * 60 * 4,
+      },
+    ],
+  }));
 
   const createRequest = async (input: CreateRequestInput) => {
-    // optional: hit fake api
     try {
       await apiCreateRequest(input as any);
     } catch {}
@@ -168,10 +222,10 @@ export function AppDataProvider({ children }: { children: React.ReactNode }) {
       const chat: Chat = {
         id: chatId,
         studentId: req.studentId,
-        studentName: req.studentName,
+        studentName: firstName(req.studentName) || req.studentName,
         teacherId: req.teacherId,
-        teacherName: req.teacherName,
-        lastMessage: "Chat gestartet ✅",
+        teacherName: firstName(req.teacherName) || req.teacherName,
+        lastMessage: undefined,
         updatedAt: Date.now(),
       };
 
@@ -187,7 +241,7 @@ export function AppDataProvider({ children }: { children: React.ReactNode }) {
             id: uid("m"),
             chatId,
             senderId: req.teacherId,
-            text: `Hi ${req.studentName}! Ich habe deine Anfrage gesehen 🙂 Worum geht’s genau?`,
+            text: "Hi 🙂 ich kann heute… 17:00–18:00?",
             createdAt: Date.now(),
           },
         ],
@@ -198,72 +252,68 @@ export function AppDataProvider({ children }: { children: React.ReactNode }) {
   };
 
   const acceptRequest = async (requestOrId: any) => {
-    // ✅ supports acceptRequest("id") OR acceptRequest(requestObj)
     let req: Request | null = null;
 
     if (typeof requestOrId === "string") {
       const id = requestOrId;
-      const found = requests.find((r) => String(r.id) === String(id)) ?? null;
-      if (found) req = found;
-
-      // mark accepted if exists
-      if (found) {
-        setRequests((prev) =>
-          prev.map((r) => (String(r.id) === String(id) ? { ...r, status: "accepted" } : r))
-        );
-      }
+      req = requests.find((r) => String(r.id) === String(id)) ?? null;
     } else {
-      // normalize request object from screen/api
       req = normalizeIncomingRequest(requestOrId);
-
-      // ensure it's in state (so UI stays consistent)
-      setRequests((prev) => {
-        const exists = prev.some((r) => String(r.id) === String(req!.id));
-        const acceptedReq = { ...req!, status: "accepted" as const };
-
-        if (!exists) return [acceptedReq, ...prev];
-        return prev.map((r) => (String(r.id) === String(req!.id) ? acceptedReq : r));
-      });
     }
 
-    // if still null (id not found), create a safe demo req
     if (!req) {
       req = {
-        id: String(requestOrId ?? uid("r")),
+        id: uid("r"),
         studentId: "s1",
-        studentName: "Lena Fischer",
+        studentName: "Lena",
         teacherId: "t1",
-        teacherName: "Herr Bauer",
+        teacherName: "Lisa",
         subject: "Mathe",
         city: "Berlin",
-        when: "Heute 16:30",
-        status: "accepted",
+        when: "Heute 17:00",
+        status: "pending",
         createdAt: Date.now(),
       };
-
-      setRequests((prev) => [{ ...req!, status: "accepted" }, ...prev]);
     }
 
+    setRequests((prev) =>
+      prev.map((r) => (String(r.id) === String(req!.id) ? { ...r, status: "accepted" } : r))
+    );
+
+    try {
+      await apiPatchRequest(String(req.id), { status: "accepted" } as any);
+    } catch {}
+
     const chatId = ensureChatExists({ ...req, status: "accepted" });
+
+    // ✅ wichtig gegen "doppelte Lena":
+    // - demo-api hat früher random chatId erzeugt -> refreshChatsForUser hat 2 Chats erzeugt
+    // - jetzt schicken wir Namen mit und demo-api nutzt deterministische id (siehe api.ts)
+    try {
+      await apiCreateChat({
+        requestId: String(req.id),
+        studentId: String(req.studentId),
+        teacherId: String(req.teacherId),
+        studentName: String(req.studentName),
+        teacherName: String(req.teacherName),
+        id: chatId,
+      } as any);
+    } catch {}
+
     return { chatId };
   };
 
   const rejectRequest = async (requestOrId: any) => {
-    if (typeof requestOrId === "string") {
-      const id = requestOrId;
-      setRequests((prev) =>
-        prev.map((r) => (String(r.id) === String(id) ? { ...r, status: "rejected" } : r))
-      );
-      return;
-    }
+    const req = typeof requestOrId === "string" ? requests.find((r) => r.id === requestOrId) : null;
+    const normalized = req ? req : normalizeIncomingRequest(requestOrId);
 
-    const req = normalizeIncomingRequest(requestOrId);
-    setRequests((prev) => {
-      const exists = prev.some((r) => String(r.id) === String(req.id));
-      const rejectedReq = { ...req, status: "rejected" as const };
-      if (!exists) return [rejectedReq, ...prev];
-      return prev.map((r) => (String(r.id) === String(req.id) ? rejectedReq : r));
-    });
+    setRequests((prev) =>
+      prev.map((r) => (String(r.id) === String(normalized.id) ? { ...r, status: "rejected" } : r))
+    );
+
+    try {
+      await apiPatchRequest(String(normalized.id), { status: "rejected" } as any);
+    } catch {}
   };
 
   const refreshChatsForUser = async (userId: string) => {
@@ -278,13 +328,18 @@ export function AppDataProvider({ children }: { children: React.ReactNode }) {
         for (const c of apiChats as any[]) {
           const normalized: Chat = {
             id: String(c.id),
-            studentId: String(c.studentId ?? c.student_id ?? "s1"),
-            studentName: String(c.studentName ?? c.student_name ?? "Schüler"),
-            teacherId: String(c.teacherId ?? c.teacher_id ?? "t1"),
-            teacherName: String(c.teacherName ?? c.teacher_name ?? "Lehrer"),
+            studentId: String(c.studentId ?? c.student_id ?? ""),
+            teacherId: String(c.teacherId ?? c.teacher_id ?? ""),
+            // ✅ kein "Lena/Lisa" default (sonst Phantom-Duplikate)
+            studentName: String(c.studentName ?? c.student_name ?? ""),
+            teacherName: String(c.teacherName ?? c.teacher_name ?? ""),
             lastMessage: c.lastMessage ?? c.last_message ?? undefined,
             updatedAt: Number(c.updatedAt ?? c.updated_at ?? Date.now()),
           };
+
+          // defensive guard: ohne ids keinen Müll reinziehen
+          if (!normalized.id || !normalized.studentId || !normalized.teacherId) continue;
+
           byId.set(normalized.id, normalized);
         }
 
@@ -294,6 +349,8 @@ export function AppDataProvider({ children }: { children: React.ReactNode }) {
   };
 
   const refreshMessages = async (chatId: string) => {
+    if (messagesByChatId[chatId]?.length) return;
+
     try {
       const apiMsgs = await apiGetMessages(String(chatId));
       if (!Array.isArray(apiMsgs)) return;
@@ -327,9 +384,7 @@ export function AppDataProvider({ children }: { children: React.ReactNode }) {
     });
 
     setChats((prev) => {
-      const next = prev.map((c) =>
-        c.id === msg.chatId ? { ...c, lastMessage: msg.text, updatedAt: Date.now() } : c
-      );
+      const next = prev.map((c) => (c.id === msg.chatId ? { ...c, updatedAt: Date.now() } : c));
       return next.sort((a, b) => b.updatedAt - a.updatedAt);
     });
 

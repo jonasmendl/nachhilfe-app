@@ -45,8 +45,8 @@ export default function SignUpScreen({ navigation, route }: Props) {
 
   return (
     <View style={styles.container}>
-      <Text style={styles.title}>Sign Up</Text>
-      <Text style={styles.roleText}>Rolle: {role}</Text>
+      <Text style={styles.title}>Anmelden</Text>
+      <Text style={styles.roleText}>{role}</Text>
 
       <TextInput style={styles.input} placeholder="Name" value={name} onChangeText={setName} />
 

@@ -11,10 +11,10 @@ type Props = NativeStackScreenProps<
 export default function RoleSelectScreen({ navigation }: Props) {
   return (
     <View style={styles.container}>
-      <Text style={styles.title}>Choose your role</Text>
+      <Text style={styles.title}>Ich bin ein...</Text>
 
       <Button
-        title="I am a Student"
+        title="Schüler"
         onPress={() =>
           navigation.navigate("SignUp", { role: "Student" })
         }
@@ -23,7 +23,7 @@ export default function RoleSelectScreen({ navigation }: Props) {
       <View style={styles.spacer} />
 
       <Button
-        title="I am a Teacher"
+        title="Lehrer"
         onPress={() =>
           navigation.navigate("SignUp", { role: "Teacher" })
         }

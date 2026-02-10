@@ -1,3 +1,4 @@
+// src/context/AuthContext.tsx
 import React, { createContext, useContext, useMemo, useState } from "react";
 
 export type Role = "Student" | "Teacher";
@@ -28,7 +29,6 @@ type AuthContextValue = {
   user: User | null;
   setUser: (u: User | null) => void;
 
-  // ✅ Demo helpers
   loginDemoStudent: () => void;
   loginDemoTeacher: () => void;
   logout: () => void;
@@ -45,7 +45,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const loginDemoStudent = () => {
     setUser({
       id: "s1",
-      name: "Demo Schüler",
+      name: "Lena", // ✅ Vorname wirkt direkt realistisch (Chatliste zeigt nur Vornamen)
       email: "student@demo.local",
       role: "Student",
       studentPrefs: {
@@ -59,14 +59,14 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const loginDemoTeacher = () => {
     setUser({
       id: "t1",
-      name: "Demo Lehrer",
+      name: "Lisa", // ✅ Vorname wirkt direkt realistisch
       email: "teacher@demo.local",
       role: "Teacher",
       teacherProfile: {
         subjects: ["Mathe", "Englisch"],
         hourlyRate: 25,
         city: "Berlin",
-        bio: "Ich helfe bei Realschul- & Gymnasial-Nachhilfe, spontan & freundlich 🙂",
+        bio: "Ich helfe spontan bei Mathe & Englisch 🙂",
       },
     });
   };

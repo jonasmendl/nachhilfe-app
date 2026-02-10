@@ -1,3 +1,4 @@
+// src/screens/shared/ChatDetailScreen.tsx
 import React, { useCallback, useEffect, useLayoutEffect, useMemo, useState } from "react";
 import {
   View,
@@ -11,16 +12,8 @@ import {
   Platform,
 } from "react-native";
 import { useAuth } from "../context/AuthContext";
-import { getMessages, sendMessage } from "../api/api";
+import { useAppData, Message } from "../context/AppDataContext";
 import { useNavigation, useRoute } from "@react-navigation/native";
-
-type MessageRow = {
-  id: string;
-  chat_id: string;
-  sender_id: string;
-  text: string;
-  created_at: string;
-};
 
 function safeString(v: any) {
   try {
@@ -31,105 +24,110 @@ function safeString(v: any) {
   }
 }
 
+function firstName(fullName: any) {
+  const s = String(fullName ?? "").trim();
+  if (!s) return "";
+  return s.split(/\s+/)[0];
+}
+
 export default function ChatDetailScreen() {
   const navigation = useNavigation<any>();
   const route = useRoute<any>();
 
   const { user } = useAuth();
-  const chat = route?.params?.chat ?? null;
+  const { chats, messagesByChatId, refreshMessages, sendMessage } = useAppData();
 
-  const myId = useMemo(() => safeString(user?.id ?? (user as any)?.uid ?? "me"), [user]);
-  const chatId = useMemo(() => safeString(chat?.id), [chat]);
-  const title = useMemo(() => {
-    const t = safeString(chat?.title);
-    if (t) return t;
-    if (chatId) return `Chat ${chatId.slice(0, 6)}`;
-    return "Chat";
-  }, [chat, chatId]);
+  // ✅ akzeptiert beide Varianten:
+  // - navigation.navigate("ChatDetail", { chat })
+  // - navigation.navigate("ChatDetail", { chatId })
+  const routeChat = route?.params?.chat ?? null;
+  const routeChatId = safeString(route?.params?.chatId ?? "");
+
+  const chat = useMemo(() => {
+    if (routeChat?.id) return routeChat;
+    if (!routeChatId) return null;
+    return chats.find((c: any) => safeString(c.id) === routeChatId) ?? null;
+  }, [routeChat, routeChatId, chats]);
+
+  const myId = useMemo(() => safeString((user as any)?.id ?? (user as any)?.uid ?? ""), [user]);
+  const myRole = user?.role;
+
+  const chatId = useMemo(() => safeString(chat?.id ?? routeChatId), [chat, routeChatId]);
+
+  const otherDisplayName = useMemo(() => {
+    if (!chat) return "Chat";
+    if (myRole === "Teacher") return firstName(chat.studentName ?? "Schüler") || "Chat";
+    return firstName(chat.teacherName ?? "Lehrer") || "Chat";
+  }, [chat, myRole]);
+
+  const title = useMemo(() => otherDisplayName || "Chat", [otherDisplayName]);
 
   const [text, setText] = useState("");
   const [loading, setLoading] = useState(false);
   const [sending, setSending] = useState(false);
-  const [messages, setMessages] = useState<MessageRow[]>([]);
   const [error, setError] = useState<string | null>(null);
 
-  // ✅ Setze Screen Titel und sichere Back-Navigation
+  const messages = useMemo<Message[]>(() => {
+    if (!chatId) return [];
+    const arr = messagesByChatId[chatId] ?? [];
+    return [...arr].sort((a, b) => a.createdAt - b.createdAt);
+  }, [messagesByChatId, chatId]);
+
   useLayoutEffect(() => {
     navigation.setOptions({ title });
   }, [navigation, title]);
 
-  // ✅ Wenn chat/chatId fehlt -> sofort zurück (kein "Festhängen")
+  // ✅ Defensive: wenn chatId fehlt -> nie White Screen
   useEffect(() => {
-    if (!chat || !chatId) {
-      // small delay damit Navigation stabil ist (Expo / RN Navigation race)
+    if (!chatId) {
       const t = setTimeout(() => {
         if (navigation.canGoBack()) navigation.goBack();
         else navigation.replace?.("MainTabs");
       }, 0);
       return () => clearTimeout(t);
     }
-  }, [chat, chatId, navigation]);
+  }, [chatId, navigation]);
 
   const load = useCallback(async () => {
     if (!chatId) return;
     try {
       setLoading(true);
       setError(null);
-
-      // ✅ Hard timeout damit "Lade Nachrichten…" nie ewig hängt
-      const timeoutMs = 8000;
-      const timeoutPromise = new Promise<MessageRow[]>((_, reject) =>
-        setTimeout(() => reject(new Error("Timeout beim Laden der Nachrichten.")), timeoutMs)
-      );
-
-      const data = (await Promise.race([getMessages(chatId), timeoutPromise])) as any;
-      setMessages(Array.isArray(data) ? data : []);
+      await refreshMessages(chatId);
     } catch (e: any) {
       setError(safeString(e?.message || e) || "Unbekannter Fehler");
-      setMessages([]);
     } finally {
       setLoading(false);
     }
-  }, [chatId]);
+  }, [chatId, refreshMessages]);
 
   useEffect(() => {
     if (!chatId) return;
-    load();
+    void load();
   }, [chatId, load]);
 
   const onSend = useCallback(async () => {
     const t = text.trim();
-    if (!t || !chatId) return;
+    if (!t || !chatId || !myId) return;
 
     try {
       setSending(true);
-
-      const optimistic: MessageRow = {
-        id: `temp-${Date.now()}`,
-        chat_id: chatId,
-        sender_id: myId,
-        text: t,
-        created_at: new Date().toISOString(),
-      };
-
-      setMessages((prev) => [...prev, optimistic]);
       setText("");
 
       await sendMessage({ chatId, senderId: myId, text: t });
 
-      // ✅ Soft refresh (kein Blocker)
-      load();
+      void load();
     } catch (e: any) {
       Alert.alert("Fehler", safeString(e?.message || e) || "Nachricht konnte nicht gesendet werden.");
-      load();
+      void load();
     } finally {
       setSending(false);
     }
-  }, [text, chatId, myId, load]);
+  }, [text, chatId, myId, sendMessage, load]);
 
   const renderItem = useCallback(
-    ({ item }: { item: MessageRow }) => {
-      const isMe = safeString(item.sender_id) === myId;
+    ({ item }: { item: Message }) => {
+      const isMe = safeString(item.senderId) === safeString(myId);
       return (
         <View
           style={{
@@ -160,9 +158,8 @@ export default function ChatDetailScreen() {
     if (error) {
       return (
         <View style={{ paddingVertical: 18, alignItems: "center" }}>
-          <Text style={{ color: "crimson", fontWeight: "800", textAlign: "center" }}>
-            {error}
-          </Text>
+          <Text style={{ color: "crimson", fontWeight: "800", textAlign: "center" }}>{error}</Text>
+
           <TouchableOpacity
             onPress={load}
             style={{
@@ -275,9 +272,7 @@ export default function ChatDetailScreen() {
               opacity: sending || !text.trim() ? 0.7 : 1,
             }}
           >
-            <Text style={{ color: "#fff", fontWeight: "800" }}>
-              {sending ? "..." : "Senden"}
-            </Text>
+            <Text style={{ color: "#fff", fontWeight: "800" }}>{sending ? "..." : "Senden"}</Text>
           </TouchableOpacity>
         </View>
       </View>
