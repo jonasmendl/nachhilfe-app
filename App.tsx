@@ -62,11 +62,6 @@ function AppNavigator() {
 
 function Root() {
   const { user } = useAuth();
-
-  useEffect(() => {
-    getHealth().then(() => {}).catch(() => {});
-  }, []);
-
   const needsTeacherSetup = !!user && user.role === "Teacher" && !user.teacherProfile;
 
   return (

@@ -1,5 +1,6 @@
 import React from "react";
 import { View, Text, TouchableOpacity, StyleSheet } from "react-native";
+import { getTeachers } from "./api/api";
 
 export default function VerifyEmailScreen({ route, navigation }: any) {
   const { email } = route.params ?? {};
