@@ -1,47 +1,36 @@
 // src/screens/api/api.ts
-// Clean n8n-only API (kein Demo Mode mehr)
 
 const API_BASE_URL = (
   process.env.EXPO_PUBLIC_API_BASE_URL || ""
 ).replace(/\/$/, "");
 
 if (!API_BASE_URL) {
-  throw new Error(
-    "EXPO_PUBLIC_API_BASE_URL fehlt. Prüfe deine .env und starte Expo neu mit: npx expo start -c"
-  );
+  throw new Error("EXPO_PUBLIC_API_BASE_URL fehlt. Starte Expo neu mit: npx expo start -c");
 }
 
-async function request<T>(
-  endpoint: string,
-  options: RequestInit = {}
-): Promise<T> {
+async function request<T>(endpoint: string, options: RequestInit = {}): Promise<T> {
   const url = `${API_BASE_URL}/${endpoint}`;
-
+  console.log("API REQUEST:", url);
   try {
     const res = await fetch(url, {
-      headers: {
-        "Content-Type": "application/json",
-        ...options.headers,
-      },
+      headers: { "Content-Type": "application/json", ...options.headers },
       ...options,
     });
-
-    const json = await res.json();
-
-    if (!res.ok || json.success === false) {
-      throw new Error(json.error || "API Error");
-    }
-
-    return json.data;
+    const text = await res.text();
+    console.log("API RESPONSE:", text);
+    let json: any;
+    try { json = JSON.parse(text); } catch { throw new Error("Kein gültiges JSON: " + text); }
+    if (!res.ok) throw new Error(json.error || json.message || "API Error " + res.status);
+    return json;
   } catch (error: any) {
     console.error("API ERROR:", error.message);
     throw error;
   }
 }
 
-/* =====================================
-   MATCH SYSTEM (n8n)
-===================================== */
+export function getTeachers() {
+  return request<any[]>("get-teachers");
+}
 
 export function likeTeacher(studentId: string, teacherId: string) {
   return request("like-teacher", {
@@ -51,7 +40,7 @@ export function likeTeacher(studentId: string, teacherId: string) {
 }
 
 export function getTeacherRequests(teacherId: string) {
-  return request(`teacher-requests?teacherId=${teacherId}`);
+  return request<any[]>(`teacher-requests?teacherId=${teacherId}`);
 }
 
 export function acceptRequest(likeId: string) {
@@ -61,23 +50,28 @@ export function acceptRequest(likeId: string) {
   });
 }
 
-export function checkStudentMatches(studentId: string) {
-  return request(`student-matches?studentId=${studentId}`);
+export function rejectRequest(likeId: string) {
+  return request("reject-request", {
+    method: "POST",
+    body: JSON.stringify({ likeId }),
+  });
 }
+
+export function getStudentMatches(studentId: string) {
+  return request<any[]>(`student-matches?studentId=${studentId}`);
+}
+
 export function upsertTeacher(data: {
-  teacherId: string
-  name: string
-  subject: string
-  city: string
-  pricePerHour: number
-  contact: string
-  bio?: string
+  teacherId: string;
+  name: string;
+  subject: string;
+  city: string;
+  pricePerHour: number;
+  contact: string;
+  bio?: string;
 }) {
   return request("upsert-teacher", {
     method: "POST",
     body: JSON.stringify(data),
   });
-}
-export function getTeachers() {
-  return request("get-teachers");
 }
