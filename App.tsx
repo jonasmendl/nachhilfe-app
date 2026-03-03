@@ -1,9 +1,12 @@
-// App.tsx
-import React, { useEffect } from "react";
+import React from "react";
+import { ClerkProvider, SignedIn, SignedOut } from "@clerk/clerk-expo";
+import * as SecureStore from "expo-secure-store";
 import { NavigationContainer } from "@react-navigation/native";
 import { createNativeStackNavigator } from "@react-navigation/native-stack";
 import { createNavigationContainerRef } from "@react-navigation/native";
+import { SafeAreaProvider } from "react-native-safe-area-context";
 
+// Screens
 import ChatDetailScreen from "./src/screens/shared/ChatDetailScreen";
 import RoleSelectScreen from "./src/screens/RoleSelectScreen";
 import SignUpScreen from "./src/screens/SignUpScreen";
@@ -11,72 +14,89 @@ import MainTabs from "./src/screens/MainTabs";
 import TeacherProfileSetupScreen from "./src/screens/TeacherProfileSetupScreen";
 import VerifyEmailScreen from "./src/screens/VerifyEmailScreen";
 
-import { AuthProvider, useAuth } from "./src/screens/context/AuthContext";
+// Context & API
 import { AppDataProvider } from "./src/screens/context/AppDataContext";
 
-import { getHealth } from "./src/screens/api/api";
+// --- CLERK SETUP ---
+const tokenCache = {
+  async getToken(key: string) {
+    try {
+      return SecureStore.getItemAsync(key);
+    } catch (err) {
+      return null;
+    }
+  },
+  async saveToken(key: string, value: string) {
+    try {
+      return SecureStore.setItemAsync(key, value);
+    } catch (err) {
+      return;
+    }
+  },
+};
 
+const publishableKey = process.env.EXPO_PUBLIC_CLERK_PUBLISHABLE_KEY!;
+
+// --- NAVIGATION SETUP ---
 export type RootStackParamList = {
   RoleSelect: undefined;
   SignUp: { role: "Student" | "Teacher" };
-  TeacherProfileSetup: { name: string; email: string; role: "Teacher" };
+  TeacherProfileSetup: { teacherId: string; name: string; email: string; role: "Teacher" };
   VerifyEmail: { email: string };
   MainTabs: undefined;
-  // ✅ akzeptiert jetzt beides (TeacherRequest navigiert mit chatId)
   ChatDetail: { chat?: any | null; chatId?: string | null };
 };
 
 export const navigationRef = createNavigationContainerRef<RootStackParamList>();
+const Stack = createNativeStackNavigator<RootStackParamList>();
 
-const AuthStack = createNativeStackNavigator<RootStackParamList>();
-const AppStack = createNativeStackNavigator<RootStackParamList>();
-
+// Diese Navigation wird angezeigt, wenn man NICHT eingeloggt ist
 function AuthNavigator() {
   return (
-    <AuthStack.Navigator initialRouteName="RoleSelect">
-      <AuthStack.Screen name="RoleSelect" component={RoleSelectScreen} options={{ title: "Choose Role" }} />
-      <AuthStack.Screen name="SignUp" component={SignUpScreen} options={{ title: "Sign Up" }} />
-      <AuthStack.Screen
-        name="TeacherProfileSetup"
-        component={TeacherProfileSetupScreen}
-        options={{ title: "Teacher Setup" }}
-      />
-      <AuthStack.Screen name="VerifyEmail" component={VerifyEmailScreen} options={{ title: "Verify Email" }} />
-    </AuthStack.Navigator>
+    <Stack.Navigator initialRouteName="RoleSelect">
+      <Stack.Screen name="RoleSelect" component={RoleSelectScreen} options={{ title: "Willkommen" }} />
+      <Stack.Screen name="SignUp" component={SignUpScreen} options={{ title: "Registrieren" }} />
+      <Stack.Screen name="VerifyEmail" component={VerifyEmailScreen} options={{ title: "Code bestätigen" }} />
+      {/* TeacherProfileSetup bleibt im Auth-Flow, falls das Profil noch fehlt */}
+      <Stack.Screen name="TeacherProfileSetup" component={TeacherProfileSetupScreen} options={{ title: "Profil erstellen" }} />
+    </Stack.Navigator>
   );
 }
 
+// Diese Navigation wird angezeigt, wenn man EINGELOGGT ist
 function AppNavigator() {
   return (
-    <AppStack.Navigator initialRouteName="MainTabs">
-      <AppStack.Screen name="MainTabs" component={MainTabs} options={{ headerShown: false }} />
-      <AppStack.Screen
+    <Stack.Navigator initialRouteName="MainTabs">
+      <Stack.Screen name="MainTabs" component={MainTabs} options={{ headerShown: false }} />
+      <Stack.Screen
         name="ChatDetail"
         component={ChatDetailScreen}
         options={{ title: "Chat" }}
         initialParams={{ chat: null, chatId: null }}
       />
-    </AppStack.Navigator>
-  );
-}
-
-function Root() {
-  const { user } = useAuth();
-  const needsTeacherSetup = !!user && user.role === "Teacher" && !user.teacherProfile;
-
-  return (
-    <NavigationContainer ref={navigationRef}>
-      {!user || needsTeacherSetup ? <AuthNavigator /> : <AppNavigator />}
-    </NavigationContainer>
+    </Stack.Navigator>
   );
 }
 
 export default function App() {
   return (
-    <AuthProvider>
-      <AppDataProvider>
-        <Root />
-      </AppDataProvider>
-    </AuthProvider>
+    <ClerkProvider tokenCache={tokenCache} publishableKey={publishableKey}>
+      <SafeAreaProvider>
+        <AppDataProvider>
+          <NavigationContainer ref={navigationRef}>
+            
+            {/* Clerk prüft automatisch den Login-Status */}
+            <SignedIn>
+              <AppNavigator />
+            </SignedIn>
+            
+            <SignedOut>
+              <AuthNavigator />
+            </SignedOut>
+
+          </NavigationContainer>
+        </AppDataProvider>
+      </SafeAreaProvider>
+    </ClerkProvider>
   );
 }

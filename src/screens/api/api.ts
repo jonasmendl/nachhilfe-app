@@ -1,8 +1,14 @@
-// src/screens/api/api.ts
-
 const API_BASE_URL = (
   process.env.EXPO_PUBLIC_API_BASE_URL || ""
 ).replace(/\/$/, "");
+
+// Basic Auth Daten aus der .env laden
+const authUser = process.env.N8N_BASIC_AUTH_USER || "admin";
+const authPass = process.env.N8N_BASIC_AUTH_PASSWORD || "";
+
+// Header für die Authentifizierung erstellen
+// btoa konvertiert den String in Base64, was n8n für Basic Auth erwartet
+const authHeader = 'Basic ' + btoa(`${authUser}:${authPass}`);
 
 if (!API_BASE_URL) {
   throw new Error("EXPO_PUBLIC_API_BASE_URL fehlt. Starte Expo neu mit: npx expo start -c");
@@ -11,22 +17,40 @@ if (!API_BASE_URL) {
 async function request<T>(endpoint: string, options: RequestInit = {}): Promise<T> {
   const url = `${API_BASE_URL}/${endpoint}`;
   console.log("API REQUEST:", url);
+
   try {
     const res = await fetch(url, {
-      headers: { "Content-Type": "application/json", ...options.headers },
+      headers: { 
+        "Content-Type": "application/json",
+        "Authorization": authHeader, // Authentifizierung hinzugefügt
+        ...options.headers 
+      },
       ...options,
     });
+
     const text = await res.text();
     console.log("API RESPONSE:", text);
+
     let json: any;
-    try { json = JSON.parse(text); } catch { throw new Error("Kein gültiges JSON: " + text); }
-    if (!res.ok) throw new Error(json.error || json.message || "API Error " + res.status);
+    try { 
+      json = JSON.parse(text); 
+    } catch { 
+      // Hier fangen wir den Fehler ab, wenn n8n kein JSON schickt
+      throw new Error(`Server schickte kein JSON, sondern: "${text}"`); 
+    }
+
+    if (!res.ok) {
+      throw new Error(json.error || json.message || `API Error ${res.status}`);
+    }
+
     return json;
   } catch (error: any) {
     console.error("API ERROR:", error.message);
     throw error;
   }
 }
+
+// --- API Endpunkte ---
 
 export function getTeachers() {
   return request<any[]>("get-teachers");
