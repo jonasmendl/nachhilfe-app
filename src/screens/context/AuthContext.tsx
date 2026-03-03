@@ -1,5 +1,6 @@
-// src/context/AuthContext.tsx
-import React, { createContext, useContext, useMemo, useState } from "react";
+// src/screens/context/AuthContext.tsx
+import React, { createContext, useContext, useState, useMemo } from "react";
+import { useUser, useAuth as useClerkAuth } from "@clerk/clerk-expo";
 
 export type Role = "Student" | "Teacher";
 
@@ -16,6 +17,7 @@ export type StudentPrefs = {
   availabilityMinutesFromNow: number;
 };
 
+// Das gewohnte User-Objekt bleibt für den Rest deiner App bestehen
 export type User = {
   id: string;
   name: string;
@@ -27,12 +29,7 @@ export type User = {
 
 type AuthContextValue = {
   user: User | null;
-  setUser: (u: User | null) => void;
-
-  loginDemoStudent: () => void;
-  loginDemoTeacher: () => void;
   logout: () => void;
-
   updateTeacherProfile: (p: TeacherProfile) => void;
   updateStudentPrefs: (p: StudentPrefs) => void;
 };
@@ -40,58 +37,40 @@ type AuthContextValue = {
 const AuthContext = createContext<AuthContextValue | undefined>(undefined);
 
 export function AuthProvider({ children }: { children: React.ReactNode }) {
-  const [user, setUser] = useState<User | null>(null);
+  // 100% Clerk für die Authentifizierung
+  const { user: clerkUser } = useUser();
+  const { signOut } = useClerkAuth();
 
-  const loginDemoStudent = () => {
-    setUser({
-      id: "s1",
-      name: "Lena", // ✅ Vorname wirkt direkt realistisch (Chatliste zeigt nur Vornamen)
-      email: "student@demo.local",
-      role: "Student",
-      studentPrefs: {
-        subjects: ["Mathe"],
-        city: "Berlin",
-        availabilityMinutesFromNow: 120,
-      },
-    });
+  // Lokale Zwischenspeicher für die Profileinstellungen (z.B. für ProfileScreen)
+  const [teacherProfile, setTeacherProfile] = useState<TeacherProfile | undefined>(undefined);
+  const [studentPrefs, setStudentPrefs] = useState<StudentPrefs | undefined>(undefined);
+
+  const logout = async () => {
+    await signOut();
   };
 
-  const loginDemoTeacher = () => {
-    setUser({
-      id: "t1",
-      name: "Lisa", // ✅ Vorname wirkt direkt realistisch
-      email: "teacher@demo.local",
-      role: "Teacher",
-      teacherProfile: {
-        subjects: ["Mathe", "Englisch"],
-        hourlyRate: 25,
-        city: "Berlin",
-        bio: "Ich helfe spontan bei Mathe & Englisch 🙂",
-      },
-    });
-  };
+  const updateTeacherProfile = (p: TeacherProfile) => setTeacherProfile(p);
+  const updateStudentPrefs = (p: StudentPrefs) => setStudentPrefs(p);
 
-  const logout = () => setUser(null);
-
-  const updateTeacherProfile = (p: TeacherProfile) => {
-    setUser((prev) => (prev ? { ...prev, teacherProfile: p } : prev));
-  };
-
-  const updateStudentPrefs = (p: StudentPrefs) => {
-    setUser((prev) => (prev ? { ...prev, studentPrefs: p } : prev));
-  };
+  // Wir bauen dein altes User-Objekt dynamisch aus den echten Clerk-Daten!
+  const user: User | null = clerkUser ? {
+    id: clerkUser.id,
+    name: clerkUser.firstName || "User",
+    email: clerkUser.primaryEmailAddress?.emailAddress || "",
+    // Die Rolle wird bei Registrierung meist in die Metadaten geschrieben:
+    role: (clerkUser.unsafeMetadata?.role as Role) || (clerkUser.publicMetadata?.role as Role) || "Student",
+    teacherProfile,
+    studentPrefs,
+  } : null;
 
   const value = useMemo(
     () => ({
       user,
-      setUser,
-      loginDemoStudent,
-      loginDemoTeacher,
       logout,
       updateTeacherProfile,
       updateStudentPrefs,
     }),
-    [user]
+    [user, teacherProfile, studentPrefs]
   );
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;

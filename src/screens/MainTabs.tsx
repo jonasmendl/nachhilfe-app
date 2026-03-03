@@ -1,7 +1,9 @@
+// src/screens/MainTabs.tsx
 import React from "react";
 import { ActivityIndicator, View } from "react-native";
 import { createBottomTabNavigator } from "@react-navigation/bottom-tabs";
-import { useAuth } from "./context/AuthContext";
+import { useUser } from "@clerk/clerk-expo"; // Direkt Clerk nutzen!
+
 import StudentSwipeScreen from "./student/StudentSwipeScreen";
 import StudentMatchesScreen from "./student/StudentMatchesScreen";
 import TeacherRequestScreen from "./teacher/TeacherRequestScreen";
@@ -10,19 +12,23 @@ import ProfileScreen from "./shared/ProfileScreen";
 const Tab = createBottomTabNavigator();
 
 export default function MainTabs() {
-  const { user } = useAuth();
+  // Wir holen den User jetzt direkt von Clerk
+  const { user, isLoaded } = useUser();
 
-  if (!user?.role) {
+  if (!isLoaded) {
     return (
       <View style={{ flex: 1, alignItems: "center", justifyContent: "center" }}>
-        <ActivityIndicator />
+        <ActivityIndicator size="large" color="#0000ff" />
       </View>
     );
   }
 
+  // Rolle aus Clerk-Metadaten auslesen
+  const role = user?.unsafeMetadata?.role || user?.publicMetadata?.role;
+
   return (
     <Tab.Navigator>
-      {user.role === "Student" ? (
+      {role === "Student" ? (
         <>
           <Tab.Screen name="Swipen" component={StudentSwipeScreen} />
           <Tab.Screen name="Matches" component={StudentMatchesScreen} />

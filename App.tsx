@@ -1,11 +1,10 @@
-import React from "react";
 import { ClerkProvider, SignedIn, SignedOut } from "@clerk/clerk-expo";
 import * as SecureStore from "expo-secure-store";
 import { NavigationContainer } from "@react-navigation/native";
 import { createNativeStackNavigator } from "@react-navigation/native-stack";
 import { createNavigationContainerRef } from "@react-navigation/native";
 import { SafeAreaProvider } from "react-native-safe-area-context";
-
+import { AuthProvider } from "./src/screens/context/AuthContext";
 // Screens
 import ChatDetailScreen from "./src/screens/shared/ChatDetailScreen";
 import RoleSelectScreen from "./src/screens/RoleSelectScreen";
@@ -82,7 +81,8 @@ export default function App() {
   return (
     <ClerkProvider tokenCache={tokenCache} publishableKey={publishableKey}>
       <SafeAreaProvider>
-        <AppDataProvider>
+        <AuthProvider>
+         <AppDataProvider>
           <NavigationContainer ref={navigationRef}>
             
             {/* Clerk prüft automatisch den Login-Status */}
@@ -95,7 +95,8 @@ export default function App() {
             </SignedOut>
 
           </NavigationContainer>
-        </AppDataProvider>
+         </AppDataProvider>
+        </AuthProvider>
       </SafeAreaProvider>
     </ClerkProvider>
   );
