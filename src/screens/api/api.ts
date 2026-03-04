@@ -1,18 +1,8 @@
-const API_BASE_URL = (
-  process.env.EXPO_PUBLIC_API_BASE_URL || ""
-).replace(/\/$/, "");
-
-// Basic Auth Daten aus der .env laden
+// src/screens/api/api.ts
+const API_BASE_URL = (process.env.EXPO_PUBLIC_API_BASE_URL || "").replace(/\/$/, "");
 const authUser = process.env.N8N_BASIC_AUTH_USER || "admin";
 const authPass = process.env.N8N_BASIC_AUTH_PASSWORD || "";
-
-// Header für die Authentifizierung erstellen
-// btoa konvertiert den String in Base64, was n8n für Basic Auth erwartet
 const authHeader = 'Basic ' + btoa(`${authUser}:${authPass}`);
-
-if (!API_BASE_URL) {
-  throw new Error("EXPO_PUBLIC_API_BASE_URL fehlt. Starte Expo neu mit: npx expo start -c");
-}
 
 async function request<T>(endpoint: string, options: RequestInit = {}): Promise<T> {
   const url = `${API_BASE_URL}/${endpoint}`;
@@ -22,27 +12,17 @@ async function request<T>(endpoint: string, options: RequestInit = {}): Promise<
     const res = await fetch(url, {
       headers: { 
         "Content-Type": "application/json",
-        "Authorization": authHeader, // Authentifizierung hinzugefügt
+        "Authorization": authHeader,
         ...options.headers 
       },
       ...options,
     });
-
     const text = await res.text();
     console.log("API RESPONSE:", text);
 
-    let json: any;
-    try { 
-      json = JSON.parse(text); 
-    } catch { 
-      // Hier fangen wir den Fehler ab, wenn n8n kein JSON schickt
-      throw new Error(`Server schickte kein JSON, sondern: "${text}"`); 
-    }
-
-    if (!res.ok) {
-      throw new Error(json.error || json.message || `API Error ${res.status}`);
-    }
-
+    if (!text || text.trim() === "") return [] as any;
+    const json = JSON.parse(text);
+    if (!res.ok) throw new Error(json.error || json.message || `API Error ${res.status}`);
     return json;
   } catch (error: any) {
     console.error("API ERROR:", error.message);
@@ -52,50 +32,29 @@ async function request<T>(endpoint: string, options: RequestInit = {}): Promise<
 
 // --- API Endpunkte ---
 
-export function getTeachers() {
-  return request<any[]>("get-teachers");
-}
+export const getTeachers = () => request<any[]>("get-teachers");
 
-export function likeTeacher(studentId: string, teacherId: string) {
-  return request("like-teacher", {
+export const likeTeacher = (studentId: string, studentName: string, teacherId: string) => 
+  request("like-teacher", {
     method: "POST",
-    body: JSON.stringify({ studentId, teacherId }),
+    body: JSON.stringify({ studentId, studentName, teacherId }),
   });
-}
 
-export function getTeacherRequests(teacherId: string) {
-  return request<any[]>(`teacher-requests?teacherId=${teacherId}`);
-}
+export const getTeacherRequests = (teacherId: string) => 
+  request<any[]>(`teacher-requests?teacherId=${teacherId}`);
 
-export function acceptRequest(likeId: string) {
-  return request("accept-request", {
+// WICHTIG: n8n braucht die requestId, um die Zeile im Google Sheet zu finden!
+export const setRequestStatus = (requestId: string, status: "accepted" | "declined") => 
+  request("accept-request", { // Wir nutzen den accept-request Webhook für beides
     method: "POST",
-    body: JSON.stringify({ likeId }),
+    body: JSON.stringify({ requestId, status }),
   });
-}
 
-export function rejectRequest(likeId: string) {
-  return request("reject-request", {
-    method: "POST",
-    body: JSON.stringify({ likeId }),
-  });
-}
+export const getStudentMatches = (studentId: string) => 
+  request<any[]>(`student-matches?studentId=${studentId}`);
 
-export function getStudentMatches(studentId: string) {
-  return request<any[]>(`student-matches?studentId=${studentId}`);
-}
-
-export function upsertTeacher(data: {
-  teacherId: string;
-  name: string;
-  subject: string;
-  city: string;
-  pricePerHour: number;
-  contact: string;
-  bio?: string;
-}) {
-  return request("upsert-teacher", {
+export const upsertTeacher = (data: any) => 
+  request("upsert-teacher", {
     method: "POST",
     body: JSON.stringify(data),
   });
-}

@@ -1,9 +1,11 @@
 import React, { useMemo, useState } from "react";
-import { View, Text, TextInput, TouchableOpacity, Alert } from "react-native";
+import { View, Text, TextInput, TouchableOpacity, Alert, ActivityIndicator } from "react-native";
 import { useAuth } from "../context/AuthContext";
+// ✅ NEU: Wir importieren upsertTeacher, um die Daten ans Backend zu schicken
+import { upsertTeacher } from "../api/api"; 
 
 export default function ProfileScreen() {
-  const { user, updateTeacherProfile, updateStudentPrefs, setUser } = useAuth();
+  const { user, updateTeacherProfile, updateStudentPrefs, logout } = useAuth();
 
   const isTeacher = user?.role === "Teacher";
   const isStudent = user?.role === "Student";
@@ -16,18 +18,19 @@ export default function ProfileScreen() {
     return user?.studentPrefs ?? { subjects: ["Mathe"], city: "Berlin", availabilityMinutesFromNow: 45 };
   }, [user]);
 
-  // Teacher editable
   const [tSubjects, setTSubjects] = useState(initialTeacher.subjects.join(", "));
   const [tRate, setTRate] = useState(String(initialTeacher.hourlyRate));
   const [tCity, setTCity] = useState(initialTeacher.city);
   const [tBio, setTBio] = useState(initialTeacher.bio ?? "");
 
-  // Student prefs editable
   const [sSubjects, setSSubjects] = useState(initialStudent.subjects.join(", "));
   const [sCity, setSCity] = useState(initialStudent.city);
   const [sTime, setSTime] = useState(String(initialStudent.availabilityMinutesFromNow));
+  
+  const [loading, setLoading] = useState(false);
 
-  const save = () => {
+  // ✅ NEU: Die save-Funktion ist jetzt async, da wir auf das Backend warten müssen
+  const save = async () => {
     if (!user) return;
 
     if (isTeacher) {
@@ -35,13 +38,34 @@ export default function ProfileScreen() {
         Alert.alert("Fehler", "Bitte Fächer, Ort und Preis ausfüllen.");
         return;
       }
-      updateTeacherProfile({
-        subjects: tSubjects.split(",").map((s) => s.trim()).filter(Boolean),
-        hourlyRate: Number(tRate),
-        city: tCity.trim(),
-        bio: tBio.trim(),
-      });
-      Alert.alert("Gespeichert", "Lehrerprofil aktualisiert.");
+
+      setLoading(true);
+      try {
+        // 1. Wir schicken die Daten an dein Backend (n8n / Google Sheets)
+        await upsertTeacher({
+          teacherId: user.id, // Die sichere Clerk User-ID
+          name: user.name,
+          subject: tSubjects, // Die API erwartet einen String
+          city: tCity.trim(),
+          pricePerHour: Number(tRate),
+          contact: user.email, // Die Clerk-Email als Kontakt
+          bio: tBio.trim(),
+        });
+
+        // 2. Wenn das Backend erfolgreich war, updaten wir die App lokal
+        updateTeacherProfile({
+          subjects: tSubjects.split(",").map((s) => s.trim()).filter(Boolean),
+          hourlyRate: Number(tRate),
+          city: tCity.trim(),
+          bio: tBio.trim(),
+        });
+        
+        Alert.alert("Erfolg", "Dein Lehrerprofil ist jetzt live in der Datenbank!");
+      } catch (error: any) {
+        Alert.alert("Fehler beim Speichern", error.message || "Unbekannter Fehler");
+      } finally {
+        setLoading(false);
+      }
       return;
     }
 
@@ -55,13 +79,18 @@ export default function ProfileScreen() {
         city: sCity.trim(),
         availabilityMinutesFromNow: Number(sTime),
       });
-      Alert.alert("Gespeichert", "Schüler-Einstellungen aktualisiert.");
+      Alert.alert("Gespeichert", "Schüler-Einstellungen lokal aktualisiert.");
     }
   };
 
-  const logout = () => {
-    setUser(null);
-    Alert.alert("Logout", "App neu starten oder zurück navigieren (später machen wir Auto-Redirect).");
+  const handleLogout = async () => {
+    try {
+      await logout();
+      Alert.alert("Erfolgreich", "Du wurdest ausgeloggt.");
+    } catch (error) {
+      console.error(error);
+      Alert.alert("Fehler", "Fehler beim Logout");
+    }
   };
 
   return (
@@ -107,16 +136,21 @@ export default function ProfileScreen() {
 
       <TouchableOpacity
         onPress={save}
-        style={{ marginTop: 18, padding: 14, backgroundColor: "#007AFF", borderRadius: 12 }}
+        disabled={loading}
+        style={{ marginTop: 18, padding: 14, backgroundColor: "#007AFF", borderRadius: 12, opacity: loading ? 0.7 : 1 }}
       >
-        <Text style={{ color: "white", textAlign: "center", fontWeight: "800" }}>Speichern</Text>
+        {loading ? (
+          <ActivityIndicator color="#fff" />
+        ) : (
+          <Text style={{ color: "white", textAlign: "center", fontWeight: "800" }}>Speichern</Text>
+        )}
       </TouchableOpacity>
 
       <TouchableOpacity
-        onPress={logout}
+        onPress={handleLogout}
         style={{ marginTop: 12, padding: 14, backgroundColor: "#eee", borderRadius: 12 }}
       >
-        <Text style={{ textAlign: "center", fontWeight: "800" }}>Logout (Demo)</Text>
+        <Text style={{ textAlign: "center", fontWeight: "800", color: "#FF3B30" }}>Logout</Text>
       </TouchableOpacity>
     </View>
   );

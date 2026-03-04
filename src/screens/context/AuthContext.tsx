@@ -17,7 +17,6 @@ export type StudentPrefs = {
   availabilityMinutesFromNow: number;
 };
 
-// Das gewohnte User-Objekt bleibt für den Rest deiner App bestehen
 export type User = {
   id: string;
   name: string;
@@ -37,11 +36,9 @@ type AuthContextValue = {
 const AuthContext = createContext<AuthContextValue | undefined>(undefined);
 
 export function AuthProvider({ children }: { children: React.ReactNode }) {
-  // 100% Clerk für die Authentifizierung
   const { user: clerkUser } = useUser();
   const { signOut } = useClerkAuth();
 
-  // Lokale Zwischenspeicher für die Profileinstellungen (z.B. für ProfileScreen)
   const [teacherProfile, setTeacherProfile] = useState<TeacherProfile | undefined>(undefined);
   const [studentPrefs, setStudentPrefs] = useState<StudentPrefs | undefined>(undefined);
 
@@ -52,12 +49,19 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const updateTeacherProfile = (p: TeacherProfile) => setTeacherProfile(p);
   const updateStudentPrefs = (p: StudentPrefs) => setStudentPrefs(p);
 
-  // Wir bauen dein altes User-Objekt dynamisch aus den echten Clerk-Daten!
+  // ✅ NEU: Hier lesen wir den Namen korrekt aus den Metadaten, 
+  // die du im SignUpScreen gespeichert hast!
+  const getFullName = () => {
+    if (!clerkUser) return "User";
+    const metaName = clerkUser.unsafeMetadata?.fullName || clerkUser.publicMetadata?.fullName;
+    if (metaName) return String(metaName);
+    return clerkUser.firstName ? `${clerkUser.firstName} ${clerkUser.lastName || ''}`.trim() : "User";
+  };
+
   const user: User | null = clerkUser ? {
     id: clerkUser.id,
-    name: clerkUser.firstName || "User",
+    name: getFullName(), // Jetzt wird der echte Name verwendet!
     email: clerkUser.primaryEmailAddress?.emailAddress || "",
-    // Die Rolle wird bei Registrierung meist in die Metadaten geschrieben:
     role: (clerkUser.unsafeMetadata?.role as Role) || (clerkUser.publicMetadata?.role as Role) || "Student",
     teacherProfile,
     studentPrefs,

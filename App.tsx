@@ -12,6 +12,8 @@ import SignUpScreen from "./src/screens/SignUpScreen";
 import MainTabs from "./src/screens/MainTabs";
 import TeacherProfileSetupScreen from "./src/screens/TeacherProfileSetupScreen";
 import VerifyEmailScreen from "./src/screens/VerifyEmailScreen";
+// ✅ NEU: Den Login Screen importieren
+import TeacherLoginScreen from "./src/screens/teacher/TeacherLoginScreen";
 
 // Context & API
 import { AppDataProvider } from "./src/screens/context/AppDataContext";
@@ -44,6 +46,7 @@ export type RootStackParamList = {
   VerifyEmail: { email: string };
   MainTabs: undefined;
   ChatDetail: { chat?: any | null; chatId?: string | null };
+  TeacherLogin: undefined; // ✅ NEU: Den Login Screen in die Typen aufnehmen
 };
 
 export const navigationRef = createNavigationContainerRef<RootStackParamList>();
@@ -56,6 +59,10 @@ function AuthNavigator() {
       <Stack.Screen name="RoleSelect" component={RoleSelectScreen} options={{ title: "Willkommen" }} />
       <Stack.Screen name="SignUp" component={SignUpScreen} options={{ title: "Registrieren" }} />
       <Stack.Screen name="VerifyEmail" component={VerifyEmailScreen} options={{ title: "Code bestätigen" }} />
+      
+      {/* ✅ NEU: Hier ist jetzt der Login-Screen registriert */}
+      <Stack.Screen name="TeacherLogin" component={TeacherLoginScreen} options={{ title: "Einloggen" }} />
+      
       {/* TeacherProfileSetup bleibt im Auth-Flow, falls das Profil noch fehlt */}
       <Stack.Screen name="TeacherProfileSetup" component={TeacherProfileSetupScreen} options={{ title: "Profil erstellen" }} />
     </Stack.Navigator>
