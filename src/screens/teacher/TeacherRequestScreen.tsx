@@ -37,7 +37,10 @@ export default function TeacherRequestScreen() {
         <TouchableOpacity
           style={[styles.btn, styles.reject]}
           onPress={async () => {
-            try { await rejectRequest(r.id); }
+            try { 
+              // ✅ requestId statt id!
+              await rejectRequest(r.requestId); 
+            }
             catch (e: any) { Alert.alert("Fehler", String(e?.message || e)); }
           }}
         >
@@ -48,7 +51,8 @@ export default function TeacherRequestScreen() {
           style={[styles.btn, styles.accept]}
           onPress={async () => {
             try {
-              await acceptRequest(r.id);
+              // ✅ requestId statt id!
+              await acceptRequest(r.requestId);
               Alert.alert("✅ Angenommen", "Der Schüler bekommt jetzt deine Kontaktdaten.");
             } catch (e: any) {
               Alert.alert("Fehler", String(e?.message || e));
@@ -75,7 +79,8 @@ export default function TeacherRequestScreen() {
       ) : (
         <FlatList
           data={pending}
-          keyExtractor={r => String(r.id)}
+          // ✅ requestId statt id!
+          keyExtractor={r => String(r.requestId)}
           renderItem={renderItem}
           contentContainerStyle={{ paddingBottom: 40 }}
           refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} />}

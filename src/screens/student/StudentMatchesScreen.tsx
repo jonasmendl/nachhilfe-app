@@ -32,8 +32,9 @@ export default function StudentMatchesScreen() {
       {accepted.length > 0 && (
         <>
           <Text style={styles.section}>✅ Angenommen</Text>
-          {accepted.map(r => (
-            <View key={r.id} style={[styles.card, { borderColor: "#4CAF50" }]}>
+          {accepted.map((r, index) => (
+            // ✅ HIER ist der Fix: Wir nutzen den index, damit der Key IMMER einzigartig ist!
+            <View key={`accepted-${r.requestId || r.id}-${index}`} style={[styles.card, { borderColor: "#4CAF50" }]}>
               <Text style={styles.name}>{r.teacherName}</Text>
               <Text style={styles.sub}>{r.subject} • {r.city}</Text>
               <TouchableOpacity style={styles.btn} onPress={() => openContact(r.contact ?? "")}>
@@ -47,8 +48,9 @@ export default function StudentMatchesScreen() {
       {pending.length > 0 && (
         <>
           <Text style={styles.section}>⏳ Ausstehend</Text>
-          {pending.map(r => (
-            <View key={r.id} style={styles.card}>
+          {pending.map((r, index) => (
+            // ✅ HIER ist der Fix für die offenen Anfragen:
+            <View key={`pending-${r.requestId || r.id}-${index}`} style={styles.card}>
               <Text style={styles.name}>{r.teacherName}</Text>
               <Text style={styles.sub}>{r.subject} • {r.city}</Text>
               <Text style={styles.waiting}>Wartet auf Antwort…</Text>
