@@ -5,7 +5,7 @@ import {
   getTeacherRequests as apiGetTeacherRequests,
   setRequestStatus as apiSetRequestStatus,
   getStudentMatches as apiGetStudentMatches,
-  getTeachers as apiGetTeachers, // ✅ NEU: Wir laden die Lehrer für die Kontaktdaten
+  getTeachers as apiGetTeachers,
 } from "../api/api";
 
 export type RequestStatus = "pending" | "accepted" | "declined";
@@ -47,7 +47,11 @@ export function AppDataProvider({ children }: { children: React.ReactNode }) {
     try {
       const data = await apiGetTeacherRequests(teacherId);
       if (!Array.isArray(data)) return;
-      setRequests(data.map((r: any) => ({
+      
+      // 👻 FIX: Geister-Zeilen ohne IDs sofort rausfiltern!
+      const validRequests = data.filter((r: any) => r && r.requestId && r.studentId);
+
+      setRequests(validRequests.map((r: any) => ({
         id: String(r.id ?? r.requestId ?? ""),
         requestId: String(r.requestId ?? r.id ?? ""),
         studentId: String(r.studentId ?? ""),
@@ -66,15 +70,16 @@ export function AppDataProvider({ children }: { children: React.ReactNode }) {
 
   const refreshStudentMatches = async (studentId: string) => {
     try {
-      // ✅ Wir holen die Anfragen UND die Lehrer, um sie zu kombinieren
       const matchesData = await apiGetStudentMatches(studentId);
       const teachersData = await apiGetTeachers();
 
       if (!Array.isArray(matchesData)) return;
       const teacherList = Array.isArray(teachersData) ? teachersData : [];
 
-      setRequests(matchesData.map((r: any) => {
-        // Suche den passenden Lehrer zu dieser Anfrage
+      // 👻 FIX: Geister-Zeilen ohne IDs sofort rausfiltern!
+      const validMatches = matchesData.filter((r: any) => r && r.requestId && r.teacherId);
+
+      setRequests(validMatches.map((r: any) => {
         const teacher = teacherList.find(t => t.teacherId === r.teacherId);
 
         return {
@@ -83,13 +88,11 @@ export function AppDataProvider({ children }: { children: React.ReactNode }) {
           studentId: String(r.studentId ?? ""),
           studentName: String(r.studentName ?? ""),
           teacherId: String(r.teacherId ?? ""),
-          // ✅ Name aus der Lehrer-Datenbank ziehen!
           teacherName: String(r.teacherName ?? teacher?.name ?? "Lehrer"), 
           subject: String(r.subject ?? teacher?.subject ?? ""),
           city: String(r.city ?? teacher?.city ?? ""),
           when: String(r.when ?? ""),
           status: (r.status ?? "pending") as RequestStatus,
-          // ✅ Kontakt aus der Lehrer-Datenbank ziehen!
           contact: String(r.contact ?? teacher?.contact ?? ""), 
           createdAt: Number(r.createdAt ?? Date.now()),
         };

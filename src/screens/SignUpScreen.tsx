@@ -1,3 +1,4 @@
+// src/screens/SignUpScreen.tsx
 import React, { useState } from "react";
 import { View, Text, TextInput, TouchableOpacity, StyleSheet, Alert, ActivityIndicator } from "react-native";
 import { useSignUp } from "@clerk/clerk-expo";
@@ -12,7 +13,7 @@ export default function SignUpScreen({ navigation, route }: Props) {
 
   const [name, setName] = useState("");
   const [email, setEmail] = useState("");
-  const [password, setPassword] = useState(""); // Passwort wird für Clerk benötigt
+  const [password, setPassword] = useState("");
   const [loading, setLoading] = useState(false);
 
   const handleSignUp = async () => {
@@ -29,23 +30,19 @@ export default function SignUpScreen({ navigation, route }: Props) {
     setLoading(true);
 
     try {
-      // 1. Erstelle den User bei Clerk
       await signUp.create({
         emailAddress: e,
         password,
-        // Wir speichern den Namen und die Rolle in den Metadata, 
-        // damit n8n später weiß, wer der User ist.
         unsafeMetadata: {
           fullName: n,
           role: role
         }
       });
 
-      // 2. Sende den Verifizierungscode an die E-Mail
       await signUp.prepareEmailAddressVerification({ strategy: "email_code" });
 
-      // 3. Navigiere zum Verify Screen
-      navigation.navigate("VerifyEmail", { email: e });
+      // ✅ FIX: Wir geben die Rolle jetzt mit an den VerifyEmailScreen!
+      navigation.navigate("VerifyEmail", { email: e, role: role });
       
     } catch (err: any) {
       console.error(JSON.stringify(err, null, 2));
@@ -107,41 +104,10 @@ export default function SignUpScreen({ navigation, route }: Props) {
 }
 
 const styles = StyleSheet.create({
-  container: { 
-    flex: 1, 
-    backgroundColor: "#fff", 
-    padding: 20, 
-    justifyContent: "center" 
-  },
-  title: { 
-    fontSize: 28, 
-    fontWeight: "bold", 
-    marginBottom: 10, 
-    textAlign: "center" 
-  },
-  roleText: { 
-    textAlign: "center", 
-    marginBottom: 20, 
-    color: "#555" 
-  },
-  input: {
-    borderWidth: 1,
-    borderColor: "#aaa",
-    borderRadius: 8,
-    padding: 12,
-    marginBottom: 16,
-    fontSize: 16,
-  },
-  button: { 
-    backgroundColor: "#007AFF", 
-    padding: 15, 
-    borderRadius: 8, 
-    alignItems: "center", 
-    marginTop: 10 
-  },
-  buttonText: { 
-    color: "#fff", 
-    fontSize: 18, 
-    fontWeight: "bold" 
-  },
+  container: { flex: 1, backgroundColor: "#fff", padding: 20, justifyContent: "center" },
+  title: { fontSize: 28, fontWeight: "bold", marginBottom: 10, textAlign: "center" },
+  roleText: { textAlign: "center", marginBottom: 20, color: "#555" },
+  input: { borderWidth: 1, borderColor: "#aaa", borderRadius: 8, padding: 12, marginBottom: 16, fontSize: 16 },
+  button: { backgroundColor: "#007AFF", padding: 15, borderRadius: 8, alignItems: "center", marginTop: 10 },
+  buttonText: { color: "#fff", fontSize: 18, fontWeight: "bold" },
 });
