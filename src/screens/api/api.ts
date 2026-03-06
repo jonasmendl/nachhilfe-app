@@ -1,60 +1,120 @@
 // src/screens/api/api.ts
-const API_BASE_URL = (process.env.EXPO_PUBLIC_API_BASE_URL || "").replace(/\/$/, "");
+const API_BASE_URL = (
+  process.env.EXPO_PUBLIC_API_BASE_URL || ""
+).replace(/\/$/, "");
+
 const authUser = process.env.N8N_BASIC_AUTH_USER || "admin";
 const authPass = process.env.N8N_BASIC_AUTH_PASSWORD || "";
-const authHeader = 'Basic ' + btoa(`${authUser}:${authPass}`);
+// btoa Fix für React Native
+const authHeader = 'Basic ' + (typeof btoa !== 'undefined' ? btoa(`${authUser}:${authPass}`) : "");
+
+if (!API_BASE_URL) {
+  throw new Error("EXPO_PUBLIC_API_BASE_URL fehlt. Starte Expo neu mit: npx expo start -c");
+}
 
 async function request<T>(endpoint: string, options: RequestInit = {}): Promise<T> {
-  const url = `${API_BASE_URL}/${endpoint}`;
-  console.log("API REQUEST:", url);
+  // 🛡️ SICHERHEITS-CHECK: Verhindert doppelte Pfade (wie upsert-teacher/upsert-teacher)
+  const cleanBase = API_BASE_URL.replace(/\/$/, "");
+  const cleanEndpoint = endpoint.startsWith("/") ? endpoint : `/${endpoint}`;
+  
+  // Wenn die Basis-URL schon auf den Endpunkt endet, nicht nochmal anhängen
+  const finalUrl = cleanBase.endsWith(endpoint) ? cleanBase : `${cleanBase}${cleanEndpoint}`;
+  
+  console.log("🚀 API REQUEST:", finalUrl);
+
+  const isFormData = options.body instanceof FormData;
+  const headers: Record<string, string> = {
+    "Authorization": authHeader,
+    ...((options.headers as Record<string, string>) || {}),
+  };
+
+  if (!isFormData) {
+    headers["Content-Type"] = "application/json";
+  }
 
   try {
-    const res = await fetch(url, {
-      headers: { 
-        "Content-Type": "application/json",
-        "Authorization": authHeader,
-        ...options.headers 
-      },
+    const res = await fetch(finalUrl, {
       ...options,
+      headers,
     });
-    const text = await res.text();
-    console.log("API RESPONSE:", text);
 
-    if (!text || text.trim() === "") return [] as any;
-    const json = JSON.parse(text);
-    if (!res.ok) throw new Error(json.error || json.message || `API Error ${res.status}`);
+    const text = await res.text();
+    if (!text || text.trim() === "") return {} as T;
+
+    let json: any;
+    try { 
+      json = JSON.parse(text); 
+    } catch { 
+      throw new Error(`Server schickte kein JSON: "${text}"`); 
+    }
+
+    if (!res.ok) {
+      throw new Error(json.error || json.message || `Fehler ${res.status}`);
+    }
     return json;
   } catch (error: any) {
-    console.error("API ERROR:", error.message);
+    console.error("❌ API FEHLER:", error.message);
     throw error;
   }
 }
 
-// --- API Endpunkte ---
+/**
+ * 🔍 NEU: Prüft den Verifizierungs-Status eines Lehrers
+ */
+export function getTeacherStatus(teacherId: string) {
+  return request<{ verified: string }>(`check-teacher-status?teacherId=${teacherId}`, {
+    method: "GET"
+  });
+}
 
-export const getTeachers = () => request<any[]>("get-teachers");
+export function getTeachers() {
+  return request<any[]>("get-teachers");
+}
 
-export const likeTeacher = (studentId: string, studentName: string, teacherId: string) => 
-  request("like-teacher", {
+export function getTeacherRequests(teacherId: string) {
+  return request<any[]>(`teacher-requests?teacherId=${teacherId}`);
+}
+
+/**
+ * ✅ Lehrerprofil inkl. Datei-Upload
+ */
+export function upsertTeacher(data: any, dokumentUri?: string | null) {
+  const formData = new FormData();
+
+  // Text-Daten mitschicken
+  Object.keys(data).forEach((key) => {
+    formData.append(key, String(data[key]));
+  });
+
+  // Datei mitschicken (unter dem Key 'data', den n8n als 'data0' empfängt)
+  if (dokumentUri) {
+    const filename = dokumentUri.split('/').pop() || 'dokument.pdf';
+    const extension = filename.split('.').pop();
+    const type = extension === 'pdf' ? 'application/pdf' : 'image/jpeg';
+
+    formData.append("data", {
+      uri: dokumentUri,
+      name: filename,
+      type: type,
+    } as any);
+  }
+
+  return request("upsert-teacher", {
+    method: "POST",
+    body: formData,
+  });
+}
+
+export function likeTeacher(studentId: string, studentName: string, teacherId: string) {
+  return request("like-teacher", {
     method: "POST",
     body: JSON.stringify({ studentId, studentName, teacherId }),
   });
+}
 
-export const getTeacherRequests = (teacherId: string) => 
-  request<any[]>(`teacher-requests?teacherId=${teacherId}`);
-
-// WICHTIG: n8n braucht die requestId, um die Zeile im Google Sheet zu finden!
-export const setRequestStatus = (requestId: string, status: "accepted" | "declined") => 
-  request("accept-request", { // Wir nutzen den accept-request Webhook für beides
+export function setRequestStatus(requestId: string, status: "accepted" | "declined") {
+  return request("accept-request", {
     method: "POST",
     body: JSON.stringify({ requestId, status }),
   });
-
-export const getStudentMatches = (studentId: string) => 
-  request<any[]>(`student-matches?studentId=${studentId}`);
-
-export const upsertTeacher = (data: any) => 
-  request("upsert-teacher", {
-    method: "POST",
-    body: JSON.stringify(data),
-  });
+}

@@ -1,14 +1,16 @@
+// src/screens/VerifyEmailScreen.tsx
 import React, { useState } from "react";
 import { View, Text, TextInput, TouchableOpacity, StyleSheet, Alert, ActivityIndicator } from "react-native";
 import { useSignUp } from "@clerk/clerk-expo";
 import { NativeStackScreenProps } from "@react-navigation/native-stack";
-import { RootStackParamList } from "../../App";
+import { RootStackParamList, navigationRef } from "../../App";
 
 type Props = NativeStackScreenProps<RootStackParamList, "VerifyEmail">;
 
 export default function VerifyEmailScreen({ route, navigation }: Props) {
   const { isLoaded, signUp, setActive } = useSignUp();
-  const { email } = route.params;
+  // ✅ FIX: Wir holen uns hier die Rolle aus den Parametern!
+  const { email, role } = route.params;
 
   const [code, setCode] = useState("");
   const [loading, setLoading] = useState(false);
@@ -24,28 +26,28 @@ export default function VerifyEmailScreen({ route, navigation }: Props) {
     setLoading(true);
 
     try {
-      // 1. Code bei Clerk verifizieren
       const completeSignUp = await signUp.attemptEmailAddressVerification({
         code,
       });
 
       if (completeSignUp.status === "complete") {
-        // 2. Session aktivieren (Loggt den User ein)
+        // Loggt den User ein. Clerk wechselt im Hintergrund den Navigator!
         await setActive({ session: completeSignUp.createdSessionId });
         
-        // 3. Navigation: Clerk erkennt im App.tsx jetzt "SignedIn"
-        // und wechselt automatisch zum AppNavigator.
-        // Falls es ein Lehrer ist, leiten wir ihn manuell zum Setup.
-        const role = completeSignUp.unsafeMetadata?.role;
-        const name = completeSignUp.unsafeMetadata?.fullName as string;
-
+        // ✅ FIX: Wir leiten Lehrer in den Setup-Screen um (mit minimaler Verzögerung für den Navigator-Wechsel)
         if (role === "Teacher") {
-          navigation.replace("TeacherProfileSetup", {
-            teacherId: completeSignUp.createdUserId || "",
-            name: name || "",
-            email: email,
-            role: "Teacher",
-          });
+          const name = completeSignUp.unsafeMetadata?.fullName as string;
+          
+          setTimeout(() => {
+            if (navigationRef.isReady()) {
+              navigationRef.navigate("TeacherProfileSetup", {
+                teacherId: completeSignUp.createdUserId || "",
+                name: name || "",
+                email: email,
+                role: "Teacher",
+              });
+            }
+          }, 500); // Eine halbe Sekunde warten, bis AppNavigator aktiv ist
         }
       } else {
         console.error(JSON.stringify(completeSignUp, null, 2));

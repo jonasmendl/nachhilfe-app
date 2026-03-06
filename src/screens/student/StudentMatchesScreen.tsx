@@ -12,8 +12,15 @@ export default function StudentMatchesScreen() {
     if (user?.id) refreshStudentMatches(user.id);
   }, [user?.id]);
 
-  const accepted = requests.filter(r => r.status === "accepted");
-  const pending = requests.filter(r => r.status === "pending");
+  // 🛡️ DER TÜRSTEHER: Wir filtern hier knallhart alles raus, was ein "Geist" sein könnte!
+  const realRequests = requests.filter(r => {
+    const hasTeacherId = r.teacherId && r.teacherId.trim() !== "" && r.teacherId !== "undefined";
+    const isNotGhost = r.teacherName !== "Lehrer" || r.subject !== ""; 
+    return hasTeacherId && isNotGhost;
+  });
+
+  const accepted = realRequests.filter(r => r.status === "accepted");
+  const pending = realRequests.filter(r => r.status === "pending");
 
   const openContact = async (contact: string) => {
     if (!contact) { Alert.alert("Kein Kontakt", "Lehrer hat keinen Kontakt angegeben."); return; }
@@ -33,7 +40,6 @@ export default function StudentMatchesScreen() {
         <>
           <Text style={styles.section}>✅ Angenommen</Text>
           {accepted.map((r, index) => (
-            // ✅ HIER ist der Fix: Wir nutzen den index, damit der Key IMMER einzigartig ist!
             <View key={`accepted-${r.requestId || r.id}-${index}`} style={[styles.card, { borderColor: "#4CAF50" }]}>
               <Text style={styles.name}>{r.teacherName}</Text>
               <Text style={styles.sub}>{r.subject} • {r.city}</Text>
@@ -49,7 +55,6 @@ export default function StudentMatchesScreen() {
         <>
           <Text style={styles.section}>⏳ Ausstehend</Text>
           {pending.map((r, index) => (
-            // ✅ HIER ist der Fix für die offenen Anfragen:
             <View key={`pending-${r.requestId || r.id}-${index}`} style={styles.card}>
               <Text style={styles.name}>{r.teacherName}</Text>
               <Text style={styles.sub}>{r.subject} • {r.city}</Text>
@@ -59,7 +64,8 @@ export default function StudentMatchesScreen() {
         </>
       )}
 
-      {requests.length === 0 && (
+      {/* Wenn keine echten Anfragen da sind, zeige den leeren Text */}
+      {realRequests.length === 0 && (
         <Text style={styles.empty}>Noch keine Anfragen. Swipe einen Lehrer!</Text>
       )}
     </View>
