@@ -1,4 +1,4 @@
-import React, { useMemo, useState } from "react";
+import React, { useState } from "react";
 import { Text, TextInput, TouchableOpacity, StyleSheet, Alert, ScrollView, View } from "react-native";
 import { NativeStackScreenProps } from "@react-navigation/native-stack";
 import * as DocumentPicker from "expo-document-picker"; 
@@ -19,31 +19,23 @@ function makeTeacherId(authUid: string, email: string) {
 export default function TeacherProfileSetupScreen({ navigation, route }: Props) {
   const { user, updateTeacherProfile } = useAuth();
 
-  const safeName = route?.params?.name ?? user?.name ?? "";
-  const safeEmail = route?.params?.email ?? user?.email ?? "";
+  const safeName = route?.params?.name ?? user?.fullName ?? "";
+  const safeEmail = route?.params?.email ?? user?.primaryEmailAddress?.emailAddress ?? "";
 
   const authUid = String(user?.id ?? (user as any)?.uid ?? "").trim();
   const teacherId = makeTeacherId(authUid, safeEmail);
 
-  const initial = useMemo(() => {
-    const tp = user?.teacherProfile;
-    return {
-      subjects: tp?.subjects?.length ? tp.subjects.join(", ") : "",
-      hourlyRate: tp?.hourlyRate ? String(tp.hourlyRate) : "",
-      city: tp?.city ?? "",
-      bio: tp?.bio ?? "",
-      contact: safeEmail ?? "",
-    };
-  }, [user, safeEmail]);
-
-  const [subjects, setSubjects] = useState(initial.subjects);
-  const [hourlyRate, setHourlyRate] = useState(initial.hourlyRate);
-  const [city, setCity] = useState(initial.city);
-  const [bio, setBio] = useState(initial.bio);
-  const [contact, setContact] = useState(initial.contact);
+  // 🔥 Wir starten IMMER mit komplett leeren Feldern für jeden neuen Lehrer!
+  const [name, setName] = useState(safeName);
+  const [subjects, setSubjects] = useState("");
+  const [hourlyRate, setHourlyRate] = useState("");
+  const [city, setCity] = useState("");
+  const [bio, setBio] = useState("");
+  const [contact, setContact] = useState(""); 
 
   const [dokumentUri, setDokumentUri] = useState<string | null>(null);
   const [dokumentName, setDokumentName] = useState<string | null>(null);
+  const [isSubmitting, setIsSubmitting] = useState(false);
 
   const pickDocument = async () => {
     try {
@@ -63,7 +55,14 @@ export default function TeacherProfileSetupScreen({ navigation, route }: Props) 
   };
 
   const handleSave = async () => {
+    if (isSubmitting) return; // Doppel-Klick verhindern
+
     const rate = Number(hourlyRate);
+
+    if (!name.trim()) {
+      Alert.alert("Fehlt noch was", "Bitte gib deinen Namen ein.");
+      return;
+    }
 
     if (!subjects.trim() || !hourlyRate.trim() || !city.trim() || Number.isNaN(rate) || rate <= 0) {
       Alert.alert("Fehlt noch was", "Bitte Fächer, Preis (Zahl) und Ort ausfüllen.");
@@ -78,23 +77,20 @@ export default function TeacherProfileSetupScreen({ navigation, route }: Props) 
 
     const contactValue = String(contact || safeEmail || "").trim();
     if (!contactValue) {
-      Alert.alert("Fehlt noch was", "Bitte eine Kontaktmöglichkeit angeben (E-Mail/WhatsApp).");
+      Alert.alert("Fehlt noch was", "Bitte eine Kontaktmöglichkeit angeben.");
       return;
     }
 
     if (!dokumentUri) {
-      Alert.alert(
-        "Verifizierung fehlt", 
-        "Bitte lade deine Immatrikulationsbescheinigung oder einen Ausweis hoch."
-      );
+      Alert.alert("Verifizierung fehlt", "Bitte lade deine Immatrikulationsbescheinigung oder einen Ausweis hoch.");
       return;
     }
 
     try {
-      // ✅ ÜBERGABE AN API: Wir senden die Daten UND die dokumentUri
+      setIsSubmitting(true);
       await upsertTeacher({
         teacherId,
-        name: safeName || "Teacher",
+        name: name.trim(), 
         subject: subjectList.join(", "),
         city: city.trim(),
         bio: bio.trim() || "",
@@ -112,6 +108,7 @@ export default function TeacherProfileSetupScreen({ navigation, route }: Props) 
       navigation.reset({ index: 0, routes: [{ name: "TeacherWaitingRoom" as never }] });
       
     } catch (e: any) {
+      setIsSubmitting(false);
       Alert.alert("Fehler", String(e?.message || e));
     }
   };
@@ -130,14 +127,19 @@ export default function TeacherProfileSetupScreen({ navigation, route }: Props) 
         </TouchableOpacity>
       </View>
 
+      <TextInput style={styles.input} placeholder="Dein Name (Pflichtfeld)" value={name} onChangeText={setName} />
       <TextInput style={styles.input} placeholder="Kontakt (E-Mail oder WhatsApp)" value={contact} onChangeText={setContact} autoCapitalize="none" />
       <TextInput style={styles.input} placeholder="Fächer (z.B. Mathe, Englisch)" value={subjects} onChangeText={setSubjects} />
       <TextInput style={styles.input} placeholder="Preis pro Stunde" value={hourlyRate} onChangeText={setHourlyRate} keyboardType="numeric" />
       <TextInput style={styles.input} placeholder="Ort / Stadt" value={city} onChangeText={setCity} />
       <TextInput style={[styles.input, styles.textArea]} placeholder="Kurz-Bio" value={bio} onChangeText={setBio} multiline />
 
-      <TouchableOpacity style={styles.saveButton} onPress={handleSave}>
-        <Text style={styles.buttonText}>Profil speichern</Text>
+      <TouchableOpacity 
+        style={[styles.saveButton, isSubmitting && { backgroundColor: "#888" }]} 
+        onPress={handleSave}
+        disabled={isSubmitting}
+      >
+        <Text style={styles.buttonText}>{isSubmitting ? "Wird gespeichert..." : "Profil speichern"}</Text>
       </TouchableOpacity>
     </ScrollView>
   );

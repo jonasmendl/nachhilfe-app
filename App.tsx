@@ -63,54 +63,74 @@ function AuthNavigator() {
 
 function AppNavigator() {
   const { user } = useAuth();
-  const [isVerified, setIsVerified] = useState<boolean | null>(null);
+  // 🔥 NEU: 3 Zustände -> verifiziert (TRUE), warten (FALSE) oder Setup (noch nicht in Tabelle)
+  const [status, setStatus] = useState<"verified" | "waiting" | "setup" | null>(null);
 
   useEffect(() => {
     async function checkVerification() {
-      // Wenn es ein Lehrer ist, prüfen wir den Status im Google Sheet via n8n
       if (user?.role === "Teacher") {
         try {
-          const status = await getTeacherStatus(user.id);
-          // n8n liefert uns "TRUE" oder "FALSE" aus dem Sheet
-          setIsVerified(status.verified === "TRUE");
+          const res = await getTeacherStatus(user.id);
+          
+          // 🔥 HIER IST DER FIX: Der "kugelsichere" Check jetzt auch in der App.tsx
+          const data = Array.isArray(res) ? res[0] : res;
+          const verifiedString = String(data?.verified).trim().toUpperCase();
+
+          if (verifiedString === "TRUE") {
+            setStatus("verified");
+          } else if (verifiedString === "FALSE") {
+            setStatus("waiting");
+          } else {
+            console.log("Lehrer hat noch kein TRUE oder FALSE -> ab zum Setup!");
+            setStatus("setup");
+          }
         } catch (error) {
-          console.error("Status-Check fehlgeschlagen:", error);
-          setIsVerified(false);
+          console.log("Lehrer nicht im Sheet gefunden, starte Profil-Setup!");
+          setStatus("setup");
         }
       } else {
-        // Studenten brauchen keine Verifizierung
-        setIsVerified(true);
+        setStatus("verified"); // Schüler dürfen immer durch
       }
     }
     checkVerification();
   }, [user]);
 
-  // Ladezustand: Wir zeigen nichts an, während wir auf n8n warten
-  if (isVerified === null && user?.role === "Teacher") return null;
+  // Ladebildschirm während der Anfrage
+  if (status === null && user?.role === "Teacher") return null;
+
+  // 🔥 NEU: Die clevere Kreuzung entscheidet, wo der User startet
+  let initialRoute: keyof RootStackParamList = "MainTabs";
+  if (status === "waiting") initialRoute = "TeacherWaitingRoom";
+  if (status === "setup") initialRoute = "TeacherProfileSetup";
 
   return (
-    <Stack.Navigator initialRouteName={isVerified ? "MainTabs" : "TeacherWaitingRoom"}>
-      {isVerified ? (
-        <Stack.Screen name="MainTabs" component={MainTabs} options={{ headerShown: false }} />
-      ) : (
-        <Stack.Screen 
-          name="TeacherWaitingRoom" 
-          component={TeacherWaitingRoomScreen} 
-          options={{ title: "Wartezimmer", headerBackVisible: false, gestureEnabled: false }} 
-        />
-      )}
+    <Stack.Navigator initialRouteName={initialRoute}>
+      <Stack.Screen name="MainTabs" component={MainTabs} options={{ headerShown: false }} />
       
+      <Stack.Screen 
+        name="TeacherWaitingRoom" 
+        component={TeacherWaitingRoomScreen} 
+        options={{ title: "Wartezimmer", headerBackVisible: false, gestureEnabled: false }} 
+      />
+      
+      {/* 🔥 Der Profil-Setup Screen ist jetzt wieder voll erreichbar */}
+      <Stack.Screen 
+        name="TeacherProfileSetup" 
+        component={TeacherProfileSetupScreen} 
+        initialParams={{
+          teacherId: user?.id || "",
+          name: user?.fullName || "",
+          email: user?.primaryEmailAddress?.emailAddress || "",
+          role: "Teacher"
+        }}
+        options={{ title: "Profil erstellen", headerBackVisible: false, gestureEnabled: false }} 
+      />
+
       <Stack.Screen 
         name="ChatDetail" 
         component={ChatDetailScreen} 
         options={{ title: "Chat" }} 
         initialParams={{ chat: null, chatId: null }}
-      />
-      
-      <Stack.Screen 
-        name="TeacherProfileSetup" 
-        component={TeacherProfileSetupScreen} 
-        options={{ title: "Profil erstellen", headerBackVisible: false, gestureEnabled: false }} 
       />
     </Stack.Navigator>
   );
